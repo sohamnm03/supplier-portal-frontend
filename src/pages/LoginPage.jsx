@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { ArrowRight, Eye, EyeOff, ShieldCheck, UserPlus } from 'lucide-react'
 import AppLogo from '../components/common/AppLogo'
+import GoogleIcon from '../components/common/GoogleIcon'
 import Loader from '../components/common/Loader'
 import useAuth from '../hooks/useAuth'
 
@@ -33,6 +34,18 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [googleSubmitting, setGoogleSubmitting] = useState(false)
+
+  const goToDestination = () => navigate(location.state?.from?.pathname || '/invoices', { replace: true })
+
+  const handleGoogleSignIn = () => {
+    setError('')
+    setGoogleSubmitting(true)
+    setTimeout(() => {
+      login('google.user@gmail.com')
+      goToDestination()
+    }, 450)
+  }
 
   const handleSubmit = (event) => {
     event.preventDefault()
@@ -44,7 +57,7 @@ export default function LoginPage() {
     setSubmitting(true)
     setTimeout(() => {
       login(email.trim())
-      navigate(location.state?.from?.pathname || '/invoices', { replace: true })
+      goToDestination()
     }, 450)
   }
 
@@ -113,6 +126,20 @@ export default function LoginPage() {
           <h2>Welcome Back</h2>
           <p>Sign In To Continue To Vendor Central.</p>
           <span className="vendor-login__rule" aria-hidden="true" />
+
+          <button
+            type="button"
+            onClick={handleGoogleSignIn}
+            disabled={googleSubmitting || submitting}
+            className="mb-4 inline-flex min-h-12 w-full items-center justify-center gap-3 rounded-xl border border-slate-300 bg-white text-sm font-bold text-navy-950 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {googleSubmitting ? <Loader /> : <GoogleIcon size={18} />}
+            {googleSubmitting ? 'Signing in…' : 'Sign in with Google'}
+          </button>
+
+          <div className="mb-4 flex items-center gap-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
+            <span className="h-px flex-1 bg-slate-200" /> or continue with email <span className="h-px flex-1 bg-slate-200" />
+          </div>
 
           <div className="vendor-login__field">
             <label htmlFor="login-email">Email address <span aria-hidden="true">*</span></label>
