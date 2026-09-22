@@ -6,7 +6,8 @@ import AppLogo from '../components/common/AppLogo'
 import useAuth from '../hooks/useAuth'
 
 export default function NotFoundPage() {
-  const { isAuthenticated } = useAuth()
+  const { isAuthenticated, user } = useAuth()
+  const homePath = user?.role === 'guest' ? '/request-vendor' : '/invoices'
   return (
     <div className="relative flex min-h-screen flex-col overflow-hidden bg-[#f4f8fc]">
       <div className="pointer-events-none absolute -right-28 top-20 size-96 rounded-full border-[60px] border-blue-100/50" aria-hidden="true" />
@@ -23,7 +24,7 @@ export default function NotFoundPage() {
             <h1 className="mt-3 text-3xl font-extrabold tracking-[-0.035em] text-navy-950">Page not found</h1>
             <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-slate-600">The page you’re looking for doesn’t exist or may have moved.</p>
             <Link
-              to={isAuthenticated ? '/request-vendor' : '/'}
+              to={isAuthenticated ? homePath : '/'}
               className="mt-7 inline-flex min-h-11 items-center gap-2 rounded-lg bg-brand-600 px-5 py-2.5 text-sm font-bold text-white shadow-[0_8px_20px_rgba(23,105,232,0.18)] transition hover:bg-brand-700"
             >
               <ArrowLeft size={17} /> Return home

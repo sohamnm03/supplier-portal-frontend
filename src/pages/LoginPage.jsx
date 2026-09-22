@@ -44,12 +44,12 @@ export default function LoginPage() {
     setSubmitting(true)
     setTimeout(() => {
       login(email.trim())
-      navigate(location.state?.from?.pathname || '/request-vendor', { replace: true })
+      navigate(location.state?.from?.pathname || '/invoices', { replace: true })
     }, 450)
   }
 
   const handleCreateVendor = () => {
-    login('guest')
+    login('guest', 'guest')
     navigate('/request-vendor')
   }
 

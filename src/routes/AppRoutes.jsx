@@ -1,5 +1,6 @@
 import { Route, Routes } from 'react-router-dom'
 import LoginPage from '../pages/LoginPage'
+import InvoiceDashboardPage from '../pages/InvoiceDashboardPage'
 import VendorRequestPage from '../pages/VendorRequestPage'
 import SubmissionSuccessPage from '../pages/SubmissionSuccessPage'
 import NotFoundPage from '../pages/NotFoundPage'
@@ -11,8 +12,9 @@ export default function AppRoutes() {
     <AuthProvider>
       <Routes>
         <Route path="/" element={<LoginPage />} />
-        <Route path="/request-vendor" element={<ProtectedRoute><VendorRequestPage /></ProtectedRoute>} />
-        <Route path="/request-success" element={<ProtectedRoute><SubmissionSuccessPage /></ProtectedRoute>} />
+        <Route path="/invoices" element={<ProtectedRoute role="user"><InvoiceDashboardPage /></ProtectedRoute>} />
+        <Route path="/request-vendor" element={<ProtectedRoute role="guest"><VendorRequestPage /></ProtectedRoute>} />
+        <Route path="/request-success" element={<ProtectedRoute role="guest"><SubmissionSuccessPage /></ProtectedRoute>} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
     </AuthProvider>

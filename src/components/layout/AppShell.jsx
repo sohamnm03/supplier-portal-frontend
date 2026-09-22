@@ -6,6 +6,7 @@ import useAuth from '../../hooks/useAuth'
 export default function AppShell({ breadcrumb, children }) {
   const { logout, user } = useAuth()
   const navigate = useNavigate()
+  const homePath = user?.role === 'guest' ? '/request-vendor' : '/invoices'
 
   const handleSignOut = () => {
     logout()
@@ -25,7 +26,7 @@ export default function AppShell({ breadcrumb, children }) {
             <AppLogo compact />
             <div className="hidden h-7 w-px bg-slate-200 sm:block" aria-hidden="true" />
             <nav aria-label="Breadcrumb" className="hidden min-w-0 items-center gap-2 text-xs font-medium text-slate-500 sm:flex">
-              <Link to="/request-vendor" className="transition hover:text-brand-600">Workspace</Link>
+              <Link to={homePath} className="transition hover:text-brand-600">Workspace</Link>
               <ChevronRight size={14} className="text-slate-400" />
               <span className="truncate font-semibold text-navy-900">{breadcrumb || 'Vendor Onboarding'}</span>
             </nav>
@@ -33,9 +34,9 @@ export default function AppShell({ breadcrumb, children }) {
 
           <div className="flex items-center gap-1.5 sm:gap-3">
             <Link
-              to="/request-vendor"
-              aria-label="Vendor request home"
-              title="Vendor request home"
+              to={homePath}
+              aria-label="Workspace home"
+              title="Workspace home"
               className="interactive-icon"
             >
               <Home size={18} />

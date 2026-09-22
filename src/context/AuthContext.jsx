@@ -13,8 +13,8 @@ export function AuthProvider({ children }) {
   const value = useMemo(() => ({
     user,
     isAuthenticated: Boolean(user),
-    login: (email) => {
-      const nextUser = { email }
+    login: (email, role = 'user') => {
+      const nextUser = { email, role }
       localStorage.setItem(AUTH_KEY, JSON.stringify(nextUser))
       setUser(nextUser)
     },
