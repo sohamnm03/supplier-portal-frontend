@@ -1,12 +1,49 @@
+import { useEffect, useRef, useState } from 'react'
 import { Building2 } from 'lucide-react'
 import Input from '../common/Input'
 import Select from '../common/Select'
 import FormSection from './FormSection'
 import { currencies, vendorCategories, vendorSubcategories } from '../../data/mockData'
+import { checkEmailExists } from '../../api/vendorApi'
 
-export default function VendorInformation({ register, errors, watch }) {
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+export default function VendorInformation({ register, errors, watch, setError, clearErrors, onEmailTakenChange }) {
   const category = watch('vendorCategory')
   const msmeStatus = watch('msmeStatus')
+  const vendorEmail = watch('vendorEmail')
+  const [checkingEmail, setCheckingEmail] = useState(false)
+  const emailCheckToken = useRef(0)
+
+  useEffect(() => {
+    const email = vendorEmail?.trim()
+    onEmailTakenChange?.(false)
+    if (!email || !EMAIL_PATTERN.test(email)) {
+      setCheckingEmail(false)
+      return undefined
+    }
+
+    const token = ++emailCheckToken.current
+    setCheckingEmail(true)
+    const timer = setTimeout(async () => {
+      try {
+        const exists = await checkEmailExists(email)
+        if (token !== emailCheckToken.current) return
+        if (exists) {
+          setError('vendorEmail', { type: 'manual', message: 'This email already exists.' })
+          onEmailTakenChange?.(true)
+        } else {
+          clearErrors('vendorEmail')
+        }
+      } catch {
+        // An availability check that fails to reach the server shouldn't block the user from continuing.
+      } finally {
+        if (token === emailCheckToken.current) setCheckingEmail(false)
+      }
+    }, 500)
+
+    return () => clearTimeout(timer)
+  }, [vendorEmail, setError, clearErrors, onEmailTakenChange])
 
   return (
     <FormSection icon={Building2} title="Vendor information" description="Provide the vendor’s legal and commercial profile.">
@@ -50,6 +87,7 @@ export default function VendorInformation({ register, errors, watch }) {
           type="email"
           register={register}
           error={errors.vendorEmail}
+          hint={checkingEmail ? 'Checking availability…' : undefined}
           required
         />
         <Select

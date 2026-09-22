@@ -26,7 +26,7 @@ const trustPoints = [
 export default function VendorRequestPage() {
   const navigate = useNavigate()
   const form = useVendorRequest()
-  const { register, watch, setValue, trigger, reset, handleSubmit, formState: { errors } } = form
+  const { register, watch, setValue, setError, clearErrors, trigger, reset, handleSubmit, formState: { errors } } = form
   const [step, setStep] = useState(1)
   const [attempted, setAttempted] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -34,6 +34,7 @@ export default function VendorRequestPage() {
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
   const [cancelOpen, setCancelOpen] = useState(false)
+  const [emailTaken, setEmailTaken] = useState(false)
   const values = watch()
   const currentFields = STEP_FIELDS[step - 1] || []
   const errorCount = currentFields.filter((name) => errors[name]).length
@@ -43,6 +44,10 @@ export default function VendorRequestPage() {
     setAttempted(true)
     const valid = await trigger(currentFields, { shouldFocus: true })
     if (!valid) return
+    if (step === 1 && emailTaken) {
+      setError('vendorEmail', { type: 'manual', message: 'This email already exists.' })
+      return
+    }
     setAttempted(false)
     setStep((current) => Math.min(current + 1, 4))
     window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -92,8 +97,8 @@ export default function VendorRequestPage() {
   }
 
   const renderStep = () => {
-    const props = { register, errors, watch, setValue }
-    if (step === 1) return <VendorInformation {...props} />
+    const props = { register, errors, watch, setValue, setError, clearErrors }
+    if (step === 1) return <VendorInformation {...props} onEmailTakenChange={setEmailTaken} />
     if (step === 2) return <AddressAndTaxDetails {...props} />
     if (step === 3) return <BankDetails {...props} />
     return (
