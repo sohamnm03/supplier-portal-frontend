@@ -1,49 +1,41 @@
-import { useEffect, useRef, useState } from 'react'
 import { Building2 } from 'lucide-react'
 import Input from '../common/Input'
 import Select from '../common/Select'
 import FormSection from './FormSection'
 import { currencies, vendorCategories, vendorSubcategories } from '../../data/mockData'
-import { checkEmailExists } from '../../api/vendorApi'
+import { checkEmailExists, checkPanExists } from '../../api/vendorApi'
+import useDuplicateCheck from '../../hooks/useDuplicateCheck'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const PAN_PATTERN = /^[A-Z]{5}[0-9]{4}[A-Z]$/
 
-export default function VendorInformation({ register, errors, watch, setError, clearErrors, onEmailTakenChange }) {
+export default function VendorInformation({ register, errors, watch, setError, clearErrors, onEmailTakenChange, onPanTakenChange }) {
   const category = watch('vendorCategory')
   const msmeStatus = watch('msmeStatus')
-  const vendorEmail = watch('vendorEmail')
-  const [checkingEmail, setCheckingEmail] = useState(false)
-  const emailCheckToken = useRef(0)
+  const vendorEmail = watch('vendorEmail')?.trim() || ''
+  const pan = watch('pan')?.trim().toUpperCase() || ''
 
-  useEffect(() => {
-    const email = vendorEmail?.trim()
-    onEmailTakenChange?.(false)
-    if (!email || !EMAIL_PATTERN.test(email)) {
-      setCheckingEmail(false)
-      return undefined
-    }
+  const checkingEmail = useDuplicateCheck({
+    value: vendorEmail,
+    isValid: EMAIL_PATTERN.test(vendorEmail),
+    checkFn: checkEmailExists,
+    message: 'This email already exists.',
+    fieldName: 'vendorEmail',
+    setError,
+    clearErrors,
+    onTakenChange: onEmailTakenChange,
+  })
 
-    const token = ++emailCheckToken.current
-    setCheckingEmail(true)
-    const timer = setTimeout(async () => {
-      try {
-        const exists = await checkEmailExists(email)
-        if (token !== emailCheckToken.current) return
-        if (exists) {
-          setError('vendorEmail', { type: 'manual', message: 'This email already exists.' })
-          onEmailTakenChange?.(true)
-        } else {
-          clearErrors('vendorEmail')
-        }
-      } catch {
-        // An availability check that fails to reach the server shouldn't block the user from continuing.
-      } finally {
-        if (token === emailCheckToken.current) setCheckingEmail(false)
-      }
-    }, 500)
-
-    return () => clearTimeout(timer)
-  }, [vendorEmail, setError, clearErrors, onEmailTakenChange])
+  const checkingPan = useDuplicateCheck({
+    value: pan,
+    isValid: PAN_PATTERN.test(pan),
+    checkFn: checkPanExists,
+    message: 'This PAN already exists.',
+    fieldName: 'pan',
+    setError,
+    clearErrors,
+    onTakenChange: onPanTakenChange,
+  })
 
   return (
     <FormSection icon={Building2} title="Vendor information" description="Provide the vendor’s legal and commercial profile.">
@@ -61,7 +53,7 @@ export default function VendorInformation({ register, errors, watch, setError, c
           name="pan"
           register={register}
           error={errors.pan}
-          hint="Format: ABCDE1234F"
+          hint={checkingPan ? 'Checking availability…' : 'Format: ABCDE1234F'}
           required
         />
         <Input

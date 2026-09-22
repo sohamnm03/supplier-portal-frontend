@@ -33,19 +33,27 @@ function toVendorPayload(data) {
   }
 }
 
-export async function checkEmailExists(email) {
-  const response = await fetch(`${API_BASE_URL}/vendors/check-email`, {
+async function checkExists(path, payload, errorMessage) {
+  const response = await fetch(`${API_BASE_URL}/vendors/${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email }),
+    body: JSON.stringify(payload),
   })
 
   if (!response.ok) {
-    throw new Error('Failed to verify email address')
+    throw new Error(errorMessage)
   }
 
   const body = await response.json().catch(() => null)
   return Boolean(body?.exists)
+}
+
+export async function checkEmailExists(email) {
+  return checkExists('check-email', { email }, 'Failed to verify email address')
+}
+
+export async function checkPanExists(pan) {
+  return checkExists('check-pan', { pan }, 'Failed to verify PAN')
 }
 
 export async function createVendor(formData) {

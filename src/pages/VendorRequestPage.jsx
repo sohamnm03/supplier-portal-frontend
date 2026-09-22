@@ -35,6 +35,7 @@ export default function VendorRequestPage() {
   const [submitError, setSubmitError] = useState('')
   const [cancelOpen, setCancelOpen] = useState(false)
   const [emailTaken, setEmailTaken] = useState(false)
+  const [panTaken, setPanTaken] = useState(false)
   const values = watch()
   const currentFields = STEP_FIELDS[step - 1] || []
   const errorCount = currentFields.filter((name) => errors[name]).length
@@ -46,6 +47,10 @@ export default function VendorRequestPage() {
     if (!valid) return
     if (step === 1 && emailTaken) {
       setError('vendorEmail', { type: 'manual', message: 'This email already exists.' })
+      return
+    }
+    if (step === 1 && panTaken) {
+      setError('pan', { type: 'manual', message: 'This PAN already exists.' })
       return
     }
     setAttempted(false)
@@ -98,7 +103,7 @@ export default function VendorRequestPage() {
 
   const renderStep = () => {
     const props = { register, errors, watch, setValue, setError, clearErrors }
-    if (step === 1) return <VendorInformation {...props} onEmailTakenChange={setEmailTaken} />
+    if (step === 1) return <VendorInformation {...props} onEmailTakenChange={setEmailTaken} onPanTakenChange={setPanTaken} />
     if (step === 2) return <AddressAndTaxDetails {...props} />
     if (step === 3) return <BankDetails {...props} />
     return (
