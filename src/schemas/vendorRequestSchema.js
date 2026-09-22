@@ -6,7 +6,7 @@ export const vendorRequestSchema = z.object({
   registeredAddress1: required('Address line 1'), registeredCity: required('City'), registeredDistrict: required('District'), registeredState: required('State'), registeredPostalCode: required('Postal code'),
   pan: required('Tax identification number'), gstin: z.string().optional(), aadhaar: z.string().optional(), cin: z.string().optional(),
   accountHolderName: required('Account holder name'), bankName: required('Bank name'), branchName: required('Branch name'), accountNumber: required('Account number').regex(/^\d{6,34}$/, 'Enter a valid 6–34 digit account number'), ifsc: required('IFSC code'),
-  accurateDeclaration: z.boolean(), reviewedDeclaration: z.boolean(), termsDeclaration: z.boolean(), consentDeclaration: z.boolean(),
+  accurateDeclaration: z.boolean(), termsDeclaration: z.boolean(),
 }).superRefine((data, ctx) => {
   const add = (path, message) => ctx.addIssue({ code: 'custom', path: [path], message })
   if (data.msmeStatus === 'Registered' && !data.udyamNumber?.trim()) add('udyamNumber', 'Udyam registration number is required')

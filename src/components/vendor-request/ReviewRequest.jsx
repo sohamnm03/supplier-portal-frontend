@@ -1,5 +1,7 @@
-import { Edit3 } from 'lucide-react'
+import { ArrowLeft, Edit3, Send } from 'lucide-react'
+import Button from '../common/Button'
 import Checkbox from '../common/Checkbox'
+import Loader from '../common/Loader'
 import { displayValue, maskAccountNumber } from '../../utils/formatters'
 
 const sections = [
@@ -32,7 +34,7 @@ const sections = [
   },
 ]
 
-export default function ReviewRequest({ values, register, errors, onEdit }) {
+export default function ReviewRequest({ values, register, errors, onEdit, onBack, submitting, declarationsComplete }) {
   return (
     <div className="space-y-3">
       <div className="grid gap-3 xl:grid-cols-2">
@@ -67,11 +69,17 @@ export default function ReviewRequest({ values, register, errors, onEdit }) {
           <h3 className="text-base font-extrabold text-navy-900">Confirm declarations</h3>
           <p className="text-xs text-slate-500">All confirmations are required to submit this request.</p>
         </div>
-        <div className="mt-3 grid gap-2 md:grid-cols-2 2xl:grid-cols-4">
-          <Checkbox label="The provided information is accurate." name="accurateDeclaration" register={register} error={errors.accurateDeclaration} />
-          <Checkbox label="The vendor information has been reviewed." name="reviewedDeclaration" register={register} error={errors.reviewedDeclaration} />
-          <Checkbox label="I agree to the applicable terms and policies." name="termsDeclaration" register={register} error={errors.termsDeclaration} />
-          <Checkbox label="I consent to processing the submitted information." name="consentDeclaration" register={register} error={errors.consentDeclaration} />
+        <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="grid flex-1 gap-2 sm:grid-cols-2">
+            <Checkbox label="The provided information is accurate." name="accurateDeclaration" register={register} error={errors.accurateDeclaration} />
+            <Checkbox label="I agree to the applicable terms and policies." name="termsDeclaration" register={register} error={errors.termsDeclaration} />
+          </div>
+          <div className="flex shrink-0 flex-col-reverse gap-2 sm:flex-row">
+            <Button type="button" variant="secondary" onClick={onBack}><ArrowLeft size={17} /> Back</Button>
+            <Button type="submit" disabled={!declarationsComplete || submitting}>
+              {submitting ? <><Loader /> Sending…</> : <><Send size={17} /> Send request</>}
+            </Button>
+          </div>
         </div>
       </section>
     </div>

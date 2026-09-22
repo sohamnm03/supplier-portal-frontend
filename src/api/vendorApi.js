@@ -5,6 +5,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
 function toVendorPayload(data) {
   return {
     name: data.vendorLegalName,
+    vendor_legal_name: data.vendorLegalName,
     contact_no: data.vendorPhone,
     email: data.vendorEmail,
     vendor_type: data.vendorType,

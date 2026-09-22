@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, ArrowRight, BadgeCheck, CheckCircle2, FileCheck2, Landmark, Save, Send, ShieldCheck, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, BadgeCheck, CheckCircle2, FileCheck2, Landmark, Save, ShieldCheck, X } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import PageContainer from '../components/layout/PageContainer'
 import Button from '../components/common/Button'
@@ -37,7 +37,7 @@ export default function VendorRequestPage() {
   const values = watch()
   const currentFields = STEP_FIELDS[step - 1] || []
   const errorCount = currentFields.filter((name) => errors[name]).length
-  const declarationsComplete = values.accurateDeclaration && values.reviewedDeclaration && values.termsDeclaration && values.consentDeclaration
+  const declarationsComplete = values.accurateDeclaration && values.termsDeclaration
 
   const nextStep = async () => {
     setAttempted(true)
@@ -96,7 +96,17 @@ export default function VendorRequestPage() {
     if (step === 1) return <VendorInformation {...props} />
     if (step === 2) return <AddressAndTaxDetails {...props} />
     if (step === 3) return <BankDetails {...props} />
-    return <ReviewRequest values={values} register={register} errors={errors} onEdit={(target) => setStep(target)} />
+    return (
+      <ReviewRequest
+        values={values}
+        register={register}
+        errors={errors}
+        onEdit={(target) => setStep(target)}
+        onBack={previousStep}
+        submitting={submitting}
+        declarationsComplete={declarationsComplete}
+      />
+    )
   }
 
   return (
@@ -154,36 +164,34 @@ export default function VendorRequestPage() {
 
             <FormProgress currentStep={step} />
             <form className="flex min-h-0 flex-1 flex-col" onSubmit={submitRequest} noValidate>
-              {attempted && <FormError count={errorCount} />}
-              {submitError && (
-                <div role="alert" className="mb-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-                  <span className="font-semibold">Submission failed.</span> {submitError}
+              <div className="-mr-1 min-h-0 flex-1 overflow-y-auto pr-1">
+                {attempted && <FormError count={errorCount} />}
+                {submitError && (
+                  <div role="alert" className="mb-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+                    <span className="font-semibold">Submission failed.</span> {submitError}
+                  </div>
+                )}
+
+                {renderStep()}
+              </div>
+
+              {step !== 4 && (
+                <div className="z-20 mt-3 shrink-0 rounded-lg border border-slate-200 bg-white p-2 shadow-[0_-4px_18px_rgba(16,42,76,0.05)] sm:p-2.5">
+                  <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex flex-col-reverse gap-2 sm:flex-row">
+                      <Button type="button" variant="ghost" onClick={() => setCancelOpen(true)}><X size={17} /> Cancel</Button>
+                      <Button type="button" variant="secondary" onClick={handleSave} disabled={saving}>
+                        {saving ? <Loader /> : saved ? <CheckCircle2 size={17} /> : <Save size={17} />}
+                        {saving ? 'Saving…' : saved ? 'Draft saved' : 'Save draft'}
+                      </Button>
+                    </div>
+                    <div className="flex flex-col-reverse gap-2 sm:flex-row">
+                      {step > 1 && <Button type="button" variant="secondary" onClick={previousStep}><ArrowLeft size={17} /> Back</Button>}
+                      <Button type="button" onClick={nextStep}>{step === 3 ? 'Review request' : 'Continue'} <ArrowRight size={17} /></Button>
+                    </div>
+                  </div>
                 </div>
               )}
-
-              {renderStep()}
-
-              <div className="z-20 mt-3 rounded-lg border border-slate-200 bg-white p-2 shadow-[0_-4px_18px_rgba(16,42,76,0.05)] sm:p-2.5">
-                <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex flex-col-reverse gap-2 sm:flex-row">
-                    <Button type="button" variant="ghost" onClick={() => setCancelOpen(true)}><X size={17} /> Cancel</Button>
-                    <Button type="button" variant="secondary" onClick={handleSave} disabled={saving}>
-                      {saving ? <Loader /> : saved ? <CheckCircle2 size={17} /> : <Save size={17} />}
-                      {saving ? 'Saving…' : saved ? 'Draft saved' : 'Save draft'}
-                    </Button>
-                  </div>
-                  <div className="flex flex-col-reverse gap-2 sm:flex-row">
-                    {step > 1 && <Button type="button" variant="secondary" onClick={previousStep}><ArrowLeft size={17} /> Back</Button>}
-                    {step < 4 ? (
-                      <Button type="button" onClick={nextStep}>{step === 3 ? 'Review request' : 'Continue'} <ArrowRight size={17} /></Button>
-                    ) : (
-                      <Button type="submit" disabled={!declarationsComplete || submitting}>
-                        {submitting ? <><Loader /> Submitting…</> : <><Send size={17} /> Submit request</>}
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              </div>
             </form>
           </div>
         </section>

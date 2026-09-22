@@ -8,7 +8,7 @@ const defaults = {
   registeredAddress1: '', registeredCity: '', registeredDistrict: '', registeredState: '', registeredPostalCode: '',
   pan: '', gstin: '', aadhaar: '', cin: '',
   accountHolderName: '', bankName: '', branchName: '', accountNumber: '', ifsc: '',
-  accurateDeclaration: false, reviewedDeclaration: false, termsDeclaration: false, consentDeclaration: false,
+  accurateDeclaration: false, termsDeclaration: false,
 }
 
 export default function useVendorRequest() {
