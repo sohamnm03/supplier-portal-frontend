@@ -50,8 +50,8 @@ export default function LoginPage() {
     setSubmitting(true)
 
     try {
-      await loginVendor(normalizedEmail, password)
-      login(normalizedEmail)
+      const session = await loginVendor(normalizedEmail, password)
+      login(session.email || normalizedEmail, 'user', session.vendor_id)
       goToDestination()
     } catch (requestError) {
       logout()

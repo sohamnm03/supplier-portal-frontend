@@ -19,7 +19,28 @@ export async function loginVendor(email, password) {
     throw error
   }
 
-  return body
+  const session = body?.data ?? body
+
+  if (!session?.vendor_id) {
+    const error = new Error('The login response did not include a vendor ID.')
+    error.status = 502
+    throw error
+  }
+
+  return session
+}
+
+export async function getVendorInvoices(vendorId) {
+  const params = new URLSearchParams({ vendor_id: String(vendorId) })
+  const response = await fetch(`${API_BASE_URL}/invoices?${params}`)
+  const body = await response.json().catch(() => null)
+
+  if (!response.ok) {
+    throw new Error(body?.error || body?.message || 'Unable to load uploaded invoices.')
+  }
+
+  const invoices = Array.isArray(body) ? body : body?.invoices ?? body?.data
+  return Array.isArray(invoices) ? invoices : []
 }
 
 // Maps the react-hook-form field names (camelCase) to the backend's
@@ -71,11 +92,11 @@ async function checkExists(path, payload, errorMessage) {
 }
 
 export async function checkEmailExists(email) {
-  return checkExists('check-email', { email }, 'Failed to verify email address')
+  return checkExists('check-email', { email: email.trim().toLowerCase() }, 'Failed to verify email address')
 }
 
 export async function checkPanExists(pan) {
-  return checkExists('check-pan', { pan }, 'Failed to verify PAN')
+  return checkExists('check-pan', { pan: pan.trim().toUpperCase() }, 'Failed to verify PAN')
 }
 
 export async function createVendor(formData) {

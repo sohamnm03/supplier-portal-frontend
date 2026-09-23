@@ -4,13 +4,15 @@ import PageContainer from '../components/layout/PageContainer'
 import InvoiceUploader from '../components/invoices/InvoiceUploader'
 import InvoiceList from '../components/invoices/InvoiceList'
 import useInvoiceUploads from '../hooks/useInvoiceUploads'
+import useAuth from '../hooks/useAuth'
 
 const navItems = [
   { label: 'Invoices', icon: Receipt, active: true },
 ]
 
 export default function InvoiceDashboardPage() {
-  const { invoices, addFiles, removeInvoice, error, clearError } = useInvoiceUploads()
+  const { user } = useAuth()
+  const { invoices, addFiles, removeInvoice, error, clearError, loadError, isLoading } = useInvoiceUploads(user?.vendor_id)
 
   return (
     <AppShell breadcrumb="Invoices">
@@ -68,7 +70,7 @@ export default function InvoiceDashboardPage() {
 
               <section>
                 <h3 className="mb-2 text-sm font-extrabold text-navy-900">Uploaded invoices</h3>
-                <InvoiceList invoices={invoices} onRemove={removeInvoice} />
+                <InvoiceList invoices={invoices} onRemove={removeInvoice} isLoading={isLoading} error={loadError} />
               </section>
             </div>
           </div>

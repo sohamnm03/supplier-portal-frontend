@@ -1,13 +1,65 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { getVendorInvoices } from '../api/vendorApi'
 
 const ACCEPTED_EXTENSIONS = ['.pdf', '.png', '.jpg', '.jpeg']
 const MAX_SIZE = 10 * 1024 * 1024
 
 const isAcceptedFile = (file) => ACCEPTED_EXTENSIONS.some((ext) => file.name.toLowerCase().endsWith(ext))
 
-export default function useInvoiceUploads() {
+function toValidDate(value) {
+  const date = value ? new Date(value) : new Date()
+  return Number.isNaN(date.getTime()) ? new Date() : date
+}
+
+function normalizeInvoice(invoice, index) {
+  const id = invoice.invoice_id ?? invoice.id ?? `invoice-${index}`
+  return {
+    ...invoice,
+    id,
+    name: invoice.file_name ?? invoice.filename ?? invoice.invoice_number ?? invoice.name ?? `Invoice ${id}`,
+    size: Number(invoice.file_size ?? invoice.size) || 0,
+    type: invoice.mime_type ?? invoice.content_type ?? invoice.type ?? '',
+    uploadedAt: toValidDate(invoice.uploaded_at ?? invoice.created_at ?? invoice.invoice_date),
+    url: invoice.file_url ?? invoice.document_url ?? invoice.url ?? '',
+    mainLineItemData: invoice.main_line_item_data ?? invoice.mainLineItemData ?? invoice.line_item_data ?? invoice.line_items ?? null,
+    source: 'api',
+  }
+}
+
+export default function useInvoiceUploads(vendorId) {
   const [invoices, setInvoices] = useState([])
   const [error, setError] = useState('')
+  const [loadError, setLoadError] = useState('')
+  const [isLoading, setIsLoading] = useState(Boolean(vendorId))
+
+  useEffect(() => {
+    let ignore = false
+
+    if (!vendorId) {
+      setInvoices([])
+      setLoadError('Vendor ID is missing. Please sign in again.')
+      setIsLoading(false)
+      return () => { ignore = true }
+    }
+
+    setIsLoading(true)
+    setLoadError('')
+
+    getVendorInvoices(vendorId)
+      .then((records) => {
+        if (ignore) return
+        const remoteInvoices = records.map(normalizeInvoice)
+        setInvoices((current) => [...current.filter((invoice) => invoice.source !== 'api'), ...remoteInvoices])
+      })
+      .catch((requestError) => {
+        if (!ignore) setLoadError(requestError?.message || 'Unable to load uploaded invoices.')
+      })
+      .finally(() => {
+        if (!ignore) setIsLoading(false)
+      })
+
+    return () => { ignore = true }
+  }, [vendorId])
 
   const addFiles = useCallback((fileList) => {
     const files = Array.from(fileList || [])
@@ -30,6 +82,7 @@ export default function useInvoiceUploads() {
           type: file.type,
           uploadedAt: new Date(),
           url: URL.createObjectURL(file),
+          source: 'local',
         })),
         ...current,
       ])
@@ -40,12 +93,12 @@ export default function useInvoiceUploads() {
   const removeInvoice = useCallback((id) => {
     setInvoices((current) => {
       const target = current.find((invoice) => invoice.id === id)
-      if (target) URL.revokeObjectURL(target.url)
+      if (target?.source === 'local') URL.revokeObjectURL(target.url)
       return current.filter((invoice) => invoice.id !== id)
     })
   }, [])
 
   const clearError = useCallback(() => setError(''), [])
 
-  return { invoices, addFiles, removeInvoice, error, clearError }
+  return { invoices, addFiles, removeInvoice, error, clearError, loadError, isLoading }
 }

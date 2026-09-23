@@ -15,7 +15,7 @@ import ReviewRequest from '../components/vendor-request/ReviewRequest'
 import useVendorRequest from '../hooks/useVendorRequest'
 import { FORM_STEPS, STEP_FIELDS } from '../utils/constants'
 import { clearDraft, saveDraft } from '../utils/storage'
-import { createVendor } from '../api/vendorApi'
+import { checkEmailExists, checkPanExists, createVendor } from '../api/vendorApi'
 
 const trustPoints = [
   { icon: ShieldCheck, label: 'Secure verification' },
@@ -36,6 +36,9 @@ export default function VendorRequestPage() {
   const [cancelOpen, setCancelOpen] = useState(false)
   const [emailTaken, setEmailTaken] = useState(false)
   const [panTaken, setPanTaken] = useState(false)
+  const [checkingEmail, setCheckingEmail] = useState(false)
+  const [checkingPan, setCheckingPan] = useState(false)
+  const [checkingDuplicates, setCheckingDuplicates] = useState(false)
   const values = watch()
   const currentFields = STEP_FIELDS[step - 1] || []
   const errorCount = currentFields.filter((name) => errors[name]).length
@@ -43,15 +46,33 @@ export default function VendorRequestPage() {
 
   const nextStep = async () => {
     setAttempted(true)
+    setSubmitError('')
     const valid = await trigger(currentFields, { shouldFocus: true })
     if (!valid) return
-    if (step === 1 && emailTaken) {
-      setError('vendorEmail', { type: 'manual', message: 'This email already exists.' })
-      return
-    }
-    if (step === 1 && panTaken) {
-      setError('pan', { type: 'manual', message: 'This PAN already exists.' })
-      return
+
+    if (step === 1) {
+      setCheckingDuplicates(true)
+      try {
+        const normalizedEmail = values.vendorEmail.trim().toLowerCase()
+        const normalizedPan = values.pan.trim().toUpperCase()
+        const [emailExists, panExists] = await Promise.all([
+          checkEmailExists(normalizedEmail),
+          checkPanExists(normalizedPan),
+        ])
+
+        setEmailTaken(emailExists)
+        setPanTaken(panExists)
+        if (emailExists) setError('vendorEmail', { type: 'manual', message: 'This email already exists.' })
+        else clearErrors('vendorEmail')
+        if (panExists) setError('pan', { type: 'manual', message: 'This PAN already exists.' })
+        else clearErrors('pan')
+        if (emailExists || panExists) return
+      } catch {
+        setSubmitError('Email and PAN availability could not be verified. Please try again.')
+        return
+      } finally {
+        setCheckingDuplicates(false)
+      }
     }
     setAttempted(false)
     setStep((current) => Math.min(current + 1, 4))
@@ -103,7 +124,17 @@ export default function VendorRequestPage() {
 
   const renderStep = () => {
     const props = { register, errors, watch, setValue, setError, clearErrors }
-    if (step === 1) return <VendorInformation {...props} onEmailTakenChange={setEmailTaken} onPanTakenChange={setPanTaken} />
+    if (step === 1) {
+      return (
+        <VendorInformation
+          {...props}
+          onEmailTakenChange={setEmailTaken}
+          onPanTakenChange={setPanTaken}
+          onEmailCheckingChange={setCheckingEmail}
+          onPanCheckingChange={setCheckingPan}
+        />
+      )
+    }
     if (step === 2) return <AddressAndTaxDetails {...props} />
     if (step === 3) return <BankDetails {...props} />
     return (
@@ -197,7 +228,13 @@ export default function VendorRequestPage() {
                     </div>
                     <div className="flex flex-col-reverse gap-2 sm:flex-row">
                       {step > 1 && <Button type="button" variant="secondary" onClick={previousStep}><ArrowLeft size={17} /> Back</Button>}
-                      <Button type="button" onClick={nextStep}>{step === 3 ? 'Review request' : 'Continue'} <ArrowRight size={17} /></Button>
+                      <Button
+                        type="button"
+                        onClick={nextStep}
+                        disabled={checkingDuplicates || checkingEmail || checkingPan || emailTaken || panTaken}
+                      >
+                        {checkingDuplicates || checkingEmail || checkingPan ? <><Loader /> Checking...</> : <>{step === 3 ? 'Review request' : 'Continue'} <ArrowRight size={17} /></>}
+                      </Button>
                     </div>
                   </div>
                 </div>

@@ -9,7 +9,7 @@ import useDuplicateCheck from '../../hooks/useDuplicateCheck'
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const PAN_PATTERN = /^[A-Z]{5}[0-9]{4}[A-Z]$/
 
-export default function VendorInformation({ register, errors, watch, setError, clearErrors, onEmailTakenChange, onPanTakenChange }) {
+export default function VendorInformation({ register, errors, watch, setError, clearErrors, onEmailTakenChange, onPanTakenChange, onEmailCheckingChange, onPanCheckingChange }) {
   const category = watch('vendorCategory')
   const msmeStatus = watch('msmeStatus')
   const vendorEmail = watch('vendorEmail')?.trim() || ''
@@ -24,6 +24,7 @@ export default function VendorInformation({ register, errors, watch, setError, c
     setError,
     clearErrors,
     onTakenChange: onEmailTakenChange,
+    onCheckingChange: onEmailCheckingChange,
   })
 
   const checkingPan = useDuplicateCheck({
@@ -35,6 +36,7 @@ export default function VendorInformation({ register, errors, watch, setError, c
     setError,
     clearErrors,
     onTakenChange: onPanTakenChange,
+    onCheckingChange: onPanCheckingChange,
   })
 
   return (
