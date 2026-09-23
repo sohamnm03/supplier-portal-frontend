@@ -1,5 +1,27 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
 
+export async function loginVendor(email, password) {
+  const response = await fetch(`${API_BASE_URL}/vendors/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  })
+
+  const body = await response.json().catch(() => null)
+
+  if (response.status !== 200) {
+    const error = new Error(
+      response.status === 401
+        ? 'Invalid email or password.'
+        : body?.error || body?.message || 'Unable to sign in. Please try again.',
+    )
+    error.status = response.status
+    throw error
+  }
+
+  return body
+}
+
 // Maps the react-hook-form field names (camelCase) to the backend's
 // vendor table column names (snake_case).
 function toVendorPayload(data) {
