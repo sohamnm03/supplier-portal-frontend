@@ -1,19 +1,55 @@
-import { Building2 } from 'lucide-react'
+import { useState } from 'react'
+import { Building2, Search } from 'lucide-react'
 import Input from '../common/Input'
 import Select from '../common/Select'
 import FormSection from './FormSection'
+import Loader from '../common/Loader'
 import { currencies, vendorCategories, vendorSubcategories } from '../../data/mockData'
-import { checkEmailExists, checkPanExists } from '../../api/vendorApi'
+import { checkEmailExists, checkPanExists, verifyGstin } from '../../api/vendorApi'
 import useDuplicateCheck from '../../hooks/useDuplicateCheck'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const PAN_PATTERN = /^[A-Z]{5}[0-9]{4}[A-Z]$/
+const GSTIN_PATTERN = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/
 
-export default function VendorInformation({ register, errors, watch, setError, clearErrors, onEmailTakenChange, onPanTakenChange, onEmailCheckingChange, onPanCheckingChange }) {
+export default function VendorInformation({ register, errors, watch, setValue, setError, clearErrors, onEmailTakenChange, onPanTakenChange, onEmailCheckingChange, onPanCheckingChange }) {
   const category = watch('vendorCategory')
   const msmeStatus = watch('msmeStatus')
   const vendorEmail = watch('vendorEmail')?.trim() || ''
   const pan = watch('pan')?.trim().toUpperCase() || ''
+  const gstin = watch('gstin')?.trim().toUpperCase() || ''
+  const [gstLookup, setGstLookup] = useState({ loading: false, gstin: '', message: '' })
+
+  const handleGstLookup = async () => {
+    if (!GSTIN_PATTERN.test(gstin)) {
+      setError('gstin', { type: 'manual', message: 'Enter a valid 15-character GSTIN before lookup.' })
+      return
+    }
+
+    setGstLookup({ loading: true, gstin: '', message: '' })
+    clearErrors('gstin')
+
+    try {
+      const result = await verifyGstin(gstin)
+      const details = result.data
+      const address = [details.addrBnm, details.addrBno, details.addrSt, details.addrLoc]
+        .map((part) => String(part || '').trim())
+        .filter(Boolean)
+        .join(', ')
+
+      setValue('gstin', result.gstin || details.gstin || gstin, { shouldDirty: true, shouldValidate: true })
+      setValue('vendorLegalName', details.tradeName || details.legalName || '', { shouldDirty: true, shouldValidate: true })
+      setValue('registeredAddress1', address, { shouldDirty: true, shouldValidate: true })
+      setValue('registeredState', details.stateCode || '', { shouldDirty: true, shouldValidate: true })
+      setValue('registeredPostalCode', String(details.addrPncd || ''), { shouldDirty: true, shouldValidate: true })
+      clearErrors(['gstin', 'vendorLegalName', 'registeredAddress1', 'registeredState', 'registeredPostalCode'])
+      setGstLookup({ loading: false, gstin, message: result.message || 'GSTIN details applied.' })
+    } catch (lookupError) {
+      const message = lookupError?.message || 'GSTIN lookup failed. Please try again.'
+      setError('gstin', { type: 'manual', message })
+      setGstLookup({ loading: false, gstin: '', message: '' })
+    }
+  }
 
   const checkingEmail = useDuplicateCheck({
     value: vendorEmail,
@@ -47,7 +83,19 @@ export default function VendorInformation({ register, errors, watch, setError, c
           name="gstin"
           register={register}
           error={errors.gstin}
-          hint="15-character GST identification number, if applicable"
+          hint={gstLookup.gstin === gstin && gstLookup.message ? gstLookup.message : '15-character GST identification number, if applicable'}
+          action={(
+            <button
+              type="button"
+              onClick={handleGstLookup}
+              disabled={gstLookup.loading || !gstin}
+              className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg border border-brand-100 bg-brand-50 px-3 text-xs font-bold text-brand-700 transition hover:border-brand-500 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+              aria-label="Look up GSTIN details"
+            >
+              {gstLookup.loading ? <Loader /> : <Search size={14} />}
+              Lookup
+            </button>
+          )}
         />
         <Input label="Vendor legal name" name="vendorLegalName" register={register} error={errors.vendorLegalName} required />
         <Input

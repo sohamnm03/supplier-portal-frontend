@@ -1,4 +1,17 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
+const GST_API_BASE_URL = import.meta.env.VITE_GST_API_BASE_URL || '/gst-api'
+
+export async function verifyGstin(gstin) {
+  const params = new URLSearchParams({ gstin })
+  const response = await fetch(`${GST_API_BASE_URL}/api/verify?${params}`)
+  const body = await response.json().catch(() => null)
+
+  if (!response.ok || !body?.success || !body?.valid || !body?.data) {
+    throw new Error(body?.message || body?.error || 'GSTIN could not be verified.')
+  }
+
+  return body
+}
 
 export async function loginVendor(email, password) {
   const response = await fetch(`${API_BASE_URL}/vendors/login`, {
