@@ -4,7 +4,7 @@ import { ArrowRight, Eye, EyeOff, ShieldCheck, UserPlus } from 'lucide-react'
 import AppLogo from '../components/common/AppLogo'
 import Loader from '../components/common/Loader'
 import useAuth from '../hooks/useAuth'
-import { loginVendor } from '../api/vendorApi'
+import { getVendorProfile, loginVendor } from '../api/vendorApi'
 
 const benefits = [
   ['Guided', 'Save & Resume'],
@@ -51,7 +51,8 @@ export default function LoginPage() {
 
     try {
       const session = await loginVendor(normalizedEmail, password)
-      login(session.email || normalizedEmail, 'user', session.vendor_id)
+      const profile = await getVendorProfile(session.vendor_id)
+      login(session.email || normalizedEmail, 'user', session.vendor_id, profile)
       goToDestination()
     } catch (requestError) {
       logout()

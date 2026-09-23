@@ -1,12 +1,25 @@
+import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ChevronRight, Home, LogOut } from 'lucide-react'
 import AppLogo from '../common/AppLogo'
 import useAuth from '../../hooks/useAuth'
+import VendorProfilePanel from './VendorProfilePanel'
+import { getVendorProfile } from '../../api/vendorApi'
 
 export default function AppShell({ breadcrumb, children }) {
-  const { logout, user } = useAuth()
+  const { logout, user, profile, updateProfile } = useAuth()
   const navigate = useNavigate()
+  const [profileOpen, setProfileOpen] = useState(false)
   const homePath = user?.role === 'guest' ? '/request-vendor' : '/invoices'
+
+  useEffect(() => {
+    if (user?.role !== 'user' || !user.vendor_id || profile) return undefined
+    let ignore = false
+    getVendorProfile(user.vendor_id)
+      .then((details) => { if (!ignore) updateProfile(details) })
+      .catch(() => {})
+    return () => { ignore = true }
+  }, [profile, updateProfile, user])
 
   const handleSignOut = () => {
     logout()
@@ -41,14 +54,20 @@ export default function AppShell({ breadcrumb, children }) {
             >
               <Home size={18} />
             </Link>
-            <div className="hidden items-center gap-2 border-l border-slate-200 pl-3 sm:flex">
+            <button
+              type="button"
+              onClick={() => user?.role === 'user' && setProfileOpen(true)}
+              disabled={user?.role !== 'user'}
+              className="hidden items-center gap-2 border-l border-slate-200 pl-3 text-left transition hover:text-brand-700 disabled:cursor-default sm:flex"
+              aria-label="Open vendor profile"
+            >
               <span className="grid size-8 place-items-center rounded-full bg-brand-50 text-xs font-bold text-brand-700">
                 {(user?.email?.[0] || 'V').toUpperCase()}
               </span>
               <span className="max-w-36 truncate text-xs font-semibold text-slate-600">
                 {user?.email === 'guest' ? 'New vendor' : user?.email}
               </span>
-            </div>
+            </button>
             <button onClick={handleSignOut} aria-label="Sign out" title="Sign out" className="interactive-icon">
               <LogOut size={18} />
             </button>
@@ -57,6 +76,7 @@ export default function AppShell({ breadcrumb, children }) {
       </header>
 
       <main className="app-shell__main relative z-10 flex-1 py-2 sm:py-3">{children}</main>
+      <VendorProfilePanel open={profileOpen} onClose={() => setProfileOpen(false)} profile={profile} onSaved={updateProfile} />
     </div>
   )
 }

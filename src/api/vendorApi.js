@@ -43,6 +43,33 @@ export async function loginVendor(email, password) {
   return session
 }
 
+export async function getVendorProfile(vendorId) {
+  const params = new URLSearchParams({ vendor: String(vendorId) })
+  const response = await fetch(`${API_BASE_URL}/vendors?${params}`)
+  const body = await response.json().catch(() => null)
+
+  if (!response.ok) {
+    throw new Error(body?.error || 'Unable to load vendor details.')
+  }
+
+  return Array.isArray(body) ? body[0] : body
+}
+
+export async function updateVendorProfile(vendorId, details) {
+  const response = await fetch(`${API_BASE_URL}/vendors`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...details, vendor_id: vendorId }),
+  })
+  const body = await response.json().catch(() => null)
+
+  if (!response.ok) {
+    throw new Error(body?.error || 'Unable to update vendor details.')
+  }
+
+  return body
+}
+
 export async function getVendorInvoices(vendorId) {
   const params = new URLSearchParams({ vendor_id: String(vendorId) })
   const response = await fetch(`${API_BASE_URL}/invoices?${params}`)
