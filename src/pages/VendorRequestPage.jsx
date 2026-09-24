@@ -149,6 +149,7 @@ export default function VendorRequestPage() {
       <ReviewRequest
         values={values}
         register={register}
+        setValue={setValue}
         errors={errors}
         onEdit={(target) => setStep(target)}
         onBack={previousStep}

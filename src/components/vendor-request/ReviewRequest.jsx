@@ -1,8 +1,10 @@
+import { useState } from 'react'
 import { ArrowLeft, Edit3, Send } from 'lucide-react'
 import Button from '../common/Button'
 import Checkbox from '../common/Checkbox'
 import Loader from '../common/Loader'
 import { displayValue, maskAccountNumber } from '../../utils/formatters'
+import TermsPolicyModal from './TermsPolicyModal'
 
 const sections = [
   {
@@ -34,7 +36,20 @@ const sections = [
   },
 ]
 
-export default function ReviewRequest({ values, register, errors, onEdit, onBack, submitting, declarationsComplete }) {
+export default function ReviewRequest({ values, register, setValue, errors, onEdit, onBack, submitting, declarationsComplete }) {
+  const [termsOpen, setTermsOpen] = useState(false)
+
+  const handleTermsClick = (event) => {
+    if (values.termsDeclaration) return
+    event.preventDefault()
+    setTermsOpen(true)
+  }
+
+  const acceptTerms = () => {
+    setValue('termsDeclaration', true, { shouldDirty: true, shouldTouch: true, shouldValidate: true })
+    setTermsOpen(false)
+  }
+
   return (
     <div className="space-y-3">
       <div className="grid gap-3 xl:grid-cols-2">
@@ -72,7 +87,14 @@ export default function ReviewRequest({ values, register, errors, onEdit, onBack
         <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="grid flex-1 gap-2 sm:grid-cols-2">
             <Checkbox label="The provided information is accurate." name="accurateDeclaration" register={register} error={errors.accurateDeclaration} />
-            <Checkbox label="I agree to the applicable terms and policies." name="termsDeclaration" register={register} error={errors.termsDeclaration} />
+            <Checkbox
+              label="I agree to the supplier onboarding terms and policies."
+              description="Open and read the policy to accept."
+              name="termsDeclaration"
+              register={register}
+              error={errors.termsDeclaration}
+              onClick={handleTermsClick}
+            />
           </div>
           <div className="flex shrink-0 flex-col-reverse gap-2 sm:flex-row">
             <Button type="button" variant="secondary" onClick={onBack}><ArrowLeft size={17} /> Back</Button>
@@ -82,6 +104,7 @@ export default function ReviewRequest({ values, register, errors, onEdit, onBack
           </div>
         </div>
       </section>
+      <TermsPolicyModal open={termsOpen} onClose={() => setTermsOpen(false)} onAccept={acceptTerms} />
     </div>
   )
 }

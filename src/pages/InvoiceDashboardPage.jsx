@@ -12,7 +12,7 @@ const navItems = [
 
 export default function InvoiceDashboardPage() {
   const { user } = useAuth()
-  const { invoices, addFiles, removeInvoice, error, clearError, loadError, isLoading } = useInvoiceUploads(user?.vendor_id)
+  const { invoices, addFiles, removeInvoice, extractInvoice, error, clearError, loadError, isLoading } = useInvoiceUploads(user?.vendor_id)
 
   return (
     <AppShell breadcrumb="Invoices">
@@ -70,7 +70,7 @@ export default function InvoiceDashboardPage() {
 
               <section>
                 <h3 className="mb-2 text-sm font-extrabold text-navy-900">Uploaded invoices</h3>
-                <InvoiceList invoices={invoices} onRemove={removeInvoice} isLoading={isLoading} error={loadError} />
+                <InvoiceList invoices={invoices} onRemove={removeInvoice} onExtract={extractInvoice} isLoading={isLoading} error={loadError} />
               </section>
             </div>
           </div>

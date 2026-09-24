@@ -1,8 +1,11 @@
-import { Landmark, ShieldAlert } from 'lucide-react'
+import { useState } from 'react'
+import { Eye, EyeOff, Landmark, ShieldAlert } from 'lucide-react'
 import Input from '../common/Input'
 import FormSection from './FormSection'
 
 export default function BankDetails({ register, errors }) {
+  const [showAccountNumber, setShowAccountNumber] = useState(false)
+
   return (
     <FormSection
       icon={Landmark}
@@ -34,11 +37,22 @@ export default function BankDetails({ register, errors }) {
         <Input
           label="Account number"
           name="accountNumber"
-          type="password"
+          type={showAccountNumber ? 'text' : 'password'}
           inputMode="numeric"
           register={register}
           error={errors.accountNumber}
           autoComplete="new-password"
+          endAdornment={(
+            <button
+              type="button"
+              onClick={() => setShowAccountNumber((current) => !current)}
+              className="interactive-icon min-h-9 min-w-9"
+              aria-label={showAccountNumber ? 'Hide account number' : 'Show account number'}
+              title={showAccountNumber ? 'Hide account number' : 'Show account number'}
+            >
+              {showAccountNumber ? <EyeOff size={17} /> : <Eye size={17} />}
+            </button>
+          )}
           required
         />
         <Input

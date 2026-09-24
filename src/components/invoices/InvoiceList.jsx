@@ -1,4 +1,4 @@
-import { AlertCircle, ExternalLink, FileText, Image as ImageIcon, Inbox, LoaderCircle, Trash2 } from 'lucide-react'
+import { AlertCircle, ExternalLink, FileText, Image as ImageIcon, Inbox, LoaderCircle, ScanText, Trash2 } from 'lucide-react'
 import { formatFileSize } from '../../utils/formatters'
 
 const isImage = (invoice) => invoice.type?.startsWith('image/') || /\.(png|jpe?g)$/i.test(invoice.name)
@@ -32,7 +32,7 @@ function LineItemData({ data }) {
   )
 }
 
-export default function InvoiceList({ invoices, onRemove, isLoading = false, error = '' }) {
+export default function InvoiceList({ invoices, onRemove, onExtract, isLoading = false, error = '' }) {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-6 py-12 text-sm font-semibold text-slate-600">
@@ -72,8 +72,24 @@ export default function InvoiceList({ invoices, onRemove, isLoading = false, err
               {invoice.size > 0 && <>{formatFileSize(invoice.size)} · </>}Uploaded {invoice.uploadedAt.toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}
             </p>
             <LineItemData data={invoice.mainLineItemData} />
+            {invoice.extractionError && (
+              <p role="alert" className="mt-1.5 text-xs font-semibold text-red-600">{invoice.extractionError}</p>
+            )}
           </div>
-          <span className="hidden shrink-0 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700 sm:inline-block">Ready</span>
+          <span className={`hidden shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold sm:inline-block ${invoice.extractionStatus === 'failed' ? 'bg-red-50 text-red-700' : invoice.extractionStatus === 'extracting' ? 'bg-blue-50 text-blue-700' : 'bg-emerald-50 text-emerald-700'}`}>
+            {invoice.extractionStatus === 'failed' ? 'Failed' : invoice.extractionStatus === 'extracting' ? 'Extracting...' : invoice.source === 'local' ? 'Ready' : 'Extracted'}
+          </span>
+          {invoice.source === 'local' && (
+            <button
+              type="button"
+              onClick={() => onExtract(invoice.id)}
+              disabled={invoice.extractionStatus === 'extracting'}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {invoice.extractionStatus === 'extracting' ? <LoaderCircle size={15} className="animate-spin" /> : <ScanText size={15} />}
+              {invoice.extractionStatus === 'extracting' ? 'Extracting' : 'Extract'}
+            </button>
+          )}
           {invoice.url && (
             <a
               href={invoice.url}

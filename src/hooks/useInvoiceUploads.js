@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { getVendorInvoices } from '../api/vendorApi'
+import { extractInvoice as extractInvoiceApi, getVendorInvoices } from '../api/vendorApi'
 
 const ACCEPTED_EXTENSIONS = ['.pdf', '.png', '.jpg', '.jpeg']
 const MAX_SIZE = 10 * 1024 * 1024
@@ -16,12 +16,13 @@ function normalizeInvoice(invoice, index) {
   return {
     ...invoice,
     id,
-    name: invoice.file_name ?? invoice.filename ?? invoice.invoice_number ?? invoice.name ?? `Invoice ${id}`,
-    size: Number(invoice.file_size ?? invoice.size) || 0,
+    name: invoice.original_file_name ?? invoice.file_name ?? invoice.filename ?? invoice.invoice_number ?? invoice.name ?? `Invoice ${id}`,
+    size: Number(invoice.file_size_bytes ?? invoice.file_size ?? invoice.size) || 0,
     type: invoice.mime_type ?? invoice.content_type ?? invoice.type ?? '',
     uploadedAt: toValidDate(invoice.uploaded_at ?? invoice.created_at ?? invoice.invoice_date),
     url: invoice.file_url ?? invoice.document_url ?? invoice.url ?? '',
     mainLineItemData: invoice.main_line_item_data ?? invoice.mainLineItemData ?? invoice.line_item_data ?? invoice.line_items ?? null,
+    extractionStatus: invoice.status ?? 'completed',
     source: 'api',
   }
 }
@@ -82,6 +83,9 @@ export default function useInvoiceUploads(vendorId) {
           type: file.type,
           uploadedAt: new Date(),
           url: URL.createObjectURL(file),
+          file,
+          extractionStatus: 'ready',
+          extractionError: '',
           source: 'local',
         })),
         ...current,
@@ -100,5 +104,46 @@ export default function useInvoiceUploads(vendorId) {
 
   const clearError = useCallback(() => setError(''), [])
 
-  return { invoices, addFiles, removeInvoice, error, clearError, loadError, isLoading }
+  const extractInvoice = useCallback(async (id) => {
+    const target = invoices.find((invoice) => invoice.id === id)
+    if (!target?.file || target.source !== 'local') return
+    if (!vendorId) {
+      setInvoices((current) => current.map((invoice) => (
+        invoice.id === id
+          ? { ...invoice, extractionStatus: 'failed', extractionError: 'Vendor ID is missing. Please sign in again.' }
+          : invoice
+      )))
+      return
+    }
+
+    setInvoices((current) => current.map((invoice) => (
+      invoice.id === id
+        ? { ...invoice, extractionStatus: 'extracting', extractionError: '' }
+        : invoice
+    )))
+
+    try {
+      await extractInvoiceApi(vendorId, target.file)
+      const records = await getVendorInvoices(vendorId)
+      const remoteInvoices = records.map(normalizeInvoice)
+      URL.revokeObjectURL(target.url)
+      setInvoices((current) => [
+        ...current.filter((invoice) => invoice.source === 'local' && invoice.id !== id),
+        ...remoteInvoices,
+      ])
+      setLoadError('')
+    } catch (requestError) {
+      setInvoices((current) => current.map((invoice) => (
+        invoice.id === id
+          ? {
+              ...invoice,
+              extractionStatus: 'failed',
+              extractionError: requestError?.message || 'Unable to extract the invoice.',
+            }
+          : invoice
+      )))
+    }
+  }, [invoices, vendorId])
+
+  return { invoices, addFiles, removeInvoice, extractInvoice, error, clearError, loadError, isLoading }
 }

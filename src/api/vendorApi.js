@@ -83,6 +83,24 @@ export async function getVendorInvoices(vendorId) {
   return Array.isArray(invoices) ? invoices : []
 }
 
+export async function extractInvoice(vendorId, file) {
+  const formData = new FormData()
+  formData.append('vendor_id', String(vendorId))
+  formData.append('invoices', file)
+
+  const response = await fetch(`${API_BASE_URL}/invoices/ocr`, {
+    method: 'POST',
+    body: formData,
+  })
+  const body = await response.json().catch(() => null)
+
+  if (!response.ok) {
+    throw new Error(body?.error || body?.message || 'Unable to extract the invoice.')
+  }
+
+  return body
+}
+
 // Maps the react-hook-form field names (camelCase) to the backend's
 // vendor table column names (snake_case).
 function toVendorPayload(data) {
