@@ -1,4 +1,4 @@
-export default function Input({ label, name, register, error, hint, required, action, className = '', ...props }) {
+export default function Input({ label, name, register, error, hint, required, action, locked = false, className = '', ...props }) {
   const errorId = error ? `${name}-error` : undefined
   return (
     <div className={className}>
@@ -6,7 +6,16 @@ export default function Input({ label, name, register, error, hint, required, ac
         {label}{required && <span className="ml-1 text-red-600" aria-hidden="true">*</span>}
       </label>
       <div className={action ? 'flex items-center gap-2' : undefined}>
-        <input id={name} className="app-field min-w-0" aria-invalid={Boolean(error)} aria-required={required} aria-describedby={errorId} {...register(name)} {...props} />
+        <input
+          id={name}
+          className={`app-field min-w-0 ${locked ? 'app-field--locked' : ''}`}
+          aria-invalid={Boolean(error)}
+          aria-required={required}
+          aria-readonly={locked || undefined}
+          {...register(name)}
+          {...props}
+          readOnly={locked || props.readOnly}
+        />
         {action}
       </div>
       {hint && !error && <p className="mt-1 text-[11px] leading-4 text-slate-500">{hint}</p>}

@@ -67,6 +67,13 @@ button:not(:disabled), a, select:not(:disabled), input[type="checkbox"]:not(:dis
   .app-field[aria-invalid="true"] { border-color: var(--danger); }
   .app-field[aria-invalid="true"]:focus { box-shadow: 0 0 0 3px rgb(201 54 43 / 0.13); }
   .app-field:disabled { background: #f1f5f9; color: #64748b; cursor: not-allowed; }
+  .app-field--locked {
+    border-color: #d6dee8;
+    background-color: #eef2f6;
+    color: #64748b;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
   select.app-field {
     appearance: none;
     padding-right: 2.4rem;
@@ -113,6 +120,7 @@ button:not(:disabled), a, select:not(:disabled), input[type="checkbox"]:not(:dis
   .app-shell { height: 100vh; height: 100svh; min-height: 0; }
   .app-shell__main { min-height: 0; overflow: hidden; }
   .vendor-workspace, .vendor-workspace__card { height: 100%; min-height: 0; }
+  .guest-shell__main > .vendor-workspace { height: auto; flex: 1; }
 }
 
 @media (prefers-reduced-motion: reduce) {

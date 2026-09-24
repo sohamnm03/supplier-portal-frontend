@@ -17,7 +17,7 @@ export default function SubmissionSuccessPage() {
   ]
 
   return (
-    <AppShell breadcrumb="Submission Confirmed">
+    <AppShell backTo="/">
       <PageContainer className="max-w-5xl">
         <section className="print-card grid overflow-hidden rounded-2xl border border-blue-200/80 bg-white shadow-[0_22px_60px_rgba(40,83,130,0.1)] lg:grid-cols-[38%_62%]">
           <div className="flex flex-col bg-[#eef7ff] p-7 sm:p-10">

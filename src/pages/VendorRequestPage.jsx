@@ -23,6 +23,8 @@ const trustPoints = [
   { icon: Landmark, label: 'Bank detail validation' },
 ]
 
+const GST_MANAGED_FIELDS = ['vendorLegalName', 'registeredAddress1', 'registeredState', 'registeredPostalCode']
+
 export default function VendorRequestPage() {
   const navigate = useNavigate()
   const form = useVendorRequest()
@@ -39,10 +41,15 @@ export default function VendorRequestPage() {
   const [checkingEmail, setCheckingEmail] = useState(false)
   const [checkingPan, setCheckingPan] = useState(false)
   const [checkingDuplicates, setCheckingDuplicates] = useState(false)
+  const [gstLockedFields, setGstLockedFields] = useState(GST_MANAGED_FIELDS)
   const values = watch()
   const currentFields = STEP_FIELDS[step - 1] || []
   const errorCount = currentFields.filter((name) => errors[name]).length
   const declarationsComplete = values.accurateDeclaration && values.termsDeclaration
+
+  const lockGstFields = (fields) => {
+    setGstLockedFields((current) => [...new Set([...current, ...fields])])
+  }
 
   const nextStep = async () => {
     setAttempted(true)
@@ -123,7 +130,7 @@ export default function VendorRequestPage() {
   }
 
   const renderStep = () => {
-    const props = { register, errors, watch, setValue, setError, clearErrors }
+    const props = { register, errors, watch, setValue, setError, clearErrors, lockedFields: gstLockedFields }
     if (step === 1) {
       return (
         <VendorInformation
@@ -132,6 +139,7 @@ export default function VendorRequestPage() {
           onPanTakenChange={setPanTaken}
           onEmailCheckingChange={setCheckingEmail}
           onPanCheckingChange={setCheckingPan}
+          onGstLookupSuccess={lockGstFields}
         />
       )
     }
@@ -151,7 +159,7 @@ export default function VendorRequestPage() {
   }
 
   return (
-    <AppShell breadcrumb="New Vendor Request">
+    <AppShell backTo="/">
       <PageContainer wide className="vendor-workspace h-full">
         <section className="vendor-workspace__card grid h-full min-h-0 overflow-hidden rounded-xl border border-blue-200/80 bg-white shadow-[0_12px_36px_rgba(40,83,130,0.08)] lg:grid-cols-[240px_minmax(0,1fr)] xl:grid-cols-[260px_minmax(0,1fr)]">
           <aside className="hidden min-h-0 flex-col overflow-hidden border-r border-blue-100 bg-[#eef7ff] p-5 lg:flex xl:p-6">

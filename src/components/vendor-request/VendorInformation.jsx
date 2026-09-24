@@ -12,7 +12,7 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const PAN_PATTERN = /^[A-Z]{5}[0-9]{4}[A-Z]$/
 const GSTIN_PATTERN = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/
 
-export default function VendorInformation({ register, errors, watch, setValue, setError, clearErrors, onEmailTakenChange, onPanTakenChange, onEmailCheckingChange, onPanCheckingChange }) {
+export default function VendorInformation({ register, errors, watch, setValue, setError, clearErrors, lockedFields = [], onGstLookupSuccess, onEmailTakenChange, onPanTakenChange, onEmailCheckingChange, onPanCheckingChange }) {
   const category = watch('vendorCategory')
   const msmeStatus = watch('msmeStatus')
   const vendorEmail = watch('vendorEmail')?.trim() || ''
@@ -37,13 +37,32 @@ export default function VendorInformation({ register, errors, watch, setValue, s
         .filter(Boolean)
         .join(', ')
 
-      setValue('gstin', result.gstin || details.gstin || gstin, { shouldDirty: true, shouldValidate: true })
-      setValue('vendorLegalName', details.tradeName || details.legalName || '', { shouldDirty: true, shouldValidate: true })
-      setValue('registeredAddress1', address, { shouldDirty: true, shouldValidate: true })
-      setValue('registeredState', details.stateCode || '', { shouldDirty: true, shouldValidate: true })
-      setValue('registeredPostalCode', String(details.addrPncd || ''), { shouldDirty: true, shouldValidate: true })
+      const verifiedGstin = result.gstin || details.gstin || gstin
+      const legalName = details.tradeName || details.legalName || ''
+      const state = details.stateCode || ''
+      const postalCode = String(details.addrPncd || '')
+      const appliedFields = ['gstin']
+
+      setValue('gstin', verifiedGstin, { shouldDirty: true, shouldValidate: true })
+      if (legalName) {
+        setValue('vendorLegalName', legalName, { shouldDirty: true, shouldValidate: true })
+        appliedFields.push('vendorLegalName')
+      }
+      if (address) {
+        setValue('registeredAddress1', address, { shouldDirty: true, shouldValidate: true })
+        appliedFields.push('registeredAddress1')
+      }
+      if (state) {
+        setValue('registeredState', state, { shouldDirty: true, shouldValidate: true })
+        appliedFields.push('registeredState')
+      }
+      if (postalCode) {
+        setValue('registeredPostalCode', postalCode, { shouldDirty: true, shouldValidate: true })
+        appliedFields.push('registeredPostalCode')
+      }
       clearErrors(['gstin', 'vendorLegalName', 'registeredAddress1', 'registeredState', 'registeredPostalCode'])
-      setGstLookup({ loading: false, gstin, message: result.message || 'GSTIN details applied.' })
+      onGstLookupSuccess?.(appliedFields)
+      setGstLookup({ loading: false, gstin: verifiedGstin, message: result.message || 'GSTIN details applied. Verified fields are locked.' })
     } catch (lookupError) {
       const message = lookupError?.message || 'GSTIN lookup failed. Please try again.'
       setError('gstin', { type: 'manual', message })
@@ -84,6 +103,7 @@ export default function VendorInformation({ register, errors, watch, setValue, s
           register={register}
           error={errors.gstin}
           hint={gstLookup.gstin === gstin && gstLookup.message ? gstLookup.message : '15-character GST identification number, if applicable'}
+          locked={lockedFields.includes('gstin')}
           action={(
             <button
               type="button"
@@ -97,7 +117,15 @@ export default function VendorInformation({ register, errors, watch, setValue, s
             </button>
           )}
         />
-        <Input label="Vendor legal name" name="vendorLegalName" register={register} error={errors.vendorLegalName} required />
+        <Input
+          label="Vendor legal name"
+          name="vendorLegalName"
+          register={register}
+          error={errors.vendorLegalName}
+          hint={lockedFields.includes('vendorLegalName') ? 'Filled automatically from GSTIN lookup' : undefined}
+          locked={lockedFields.includes('vendorLegalName')}
+          required
+        />
         <Input
           label="PAN"
           name="pan"

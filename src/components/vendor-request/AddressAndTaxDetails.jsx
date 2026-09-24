@@ -3,7 +3,7 @@ import Input from '../common/Input'
 import FormSection from './FormSection'
 import AddressFields from './AddressFields'
 
-export default function AddressAndTaxDetails({ register, errors, watch }) {
+export default function AddressAndTaxDetails({ register, errors, watch, lockedFields = [] }) {
   const vendorType = watch('vendorType')
   const showCin = ['Private limited company', 'Public limited company'].includes(vendorType)
 
@@ -14,7 +14,7 @@ export default function AddressAndTaxDetails({ register, errors, watch }) {
         title="Registered address"
         description="Enter the address shown on the vendor’s official registration."
       >
-        <AddressFields prefix="registered" register={register} errors={errors} />
+        <AddressFields prefix="registered" register={register} errors={errors} lockedFields={lockedFields} />
       </FormSection>
       {showCin && (
         <FormSection

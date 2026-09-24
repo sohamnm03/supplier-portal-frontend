@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ChevronRight, Home, LogOut } from 'lucide-react'
+import { ArrowLeft, ChevronRight, Home, LogOut } from 'lucide-react'
 import AppLogo from '../common/AppLogo'
 import useAuth from '../../hooks/useAuth'
 import VendorProfilePanel from './VendorProfilePanel'
 import { getVendorProfile } from '../../api/vendorApi'
 
-export default function AppShell({ breadcrumb, children }) {
+export default function AppShell({ breadcrumb, children, backTo }) {
   const { logout, user, profile, updateProfile } = useAuth()
   const navigate = useNavigate()
   const [profileOpen, setProfileOpen] = useState(false)
@@ -33,7 +33,7 @@ export default function AppShell({ breadcrumb, children }) {
         aria-hidden="true"
       />
 
-      <header className="no-print relative z-30 border-b border-slate-200 bg-white/95 backdrop-blur">
+      {!backTo && <header className="no-print relative z-30 border-b border-slate-200 bg-white/95 backdrop-blur">
         <div className="flex h-14 w-full items-center justify-between gap-4 px-3 sm:px-4 lg:px-5">
           <div className="flex min-w-0 items-center gap-5">
             <AppLogo compact />
@@ -73,9 +73,21 @@ export default function AppShell({ breadcrumb, children }) {
             </button>
           </div>
         </div>
-      </header>
+      </header>}
 
-      <main className="app-shell__main relative z-10 flex-1 py-2 sm:py-3">{children}</main>
+      <main className={`app-shell__main relative z-10 flex-1 py-2 sm:py-3 ${backTo ? 'guest-shell__main flex min-h-0 flex-col pt-3 sm:pt-4' : ''}`}>
+        {backTo && (
+          <div className="no-print mx-auto mb-2 w-full shrink-0 px-3 sm:px-4">
+            <Link
+              to={backTo}
+              className="inline-flex min-h-10 items-center gap-2 rounded-lg px-2 text-sm font-bold text-slate-600 transition hover:bg-white hover:text-navy-900"
+            >
+              <ArrowLeft size={18} /> Back
+            </Link>
+          </div>
+        )}
+        {children}
+      </main>
       <VendorProfilePanel open={profileOpen} onClose={() => setProfileOpen(false)} profile={profile} onSaved={updateProfile} />
     </div>
   )

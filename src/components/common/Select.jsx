@@ -1,11 +1,20 @@
-export default function Select({ label, name, register, error, options, required, className = '', placeholder = 'Select an option', ...props }) {
+export default function Select({ label, name, register, error, options, required, locked = false, className = '', placeholder = 'Select an option', ...props }) {
   const errorId = error ? `${name}-error` : undefined
   return (
     <div className={className}>
       <label className="mb-1 block text-[11px] font-bold uppercase tracking-[0.04em] text-navy-900" htmlFor={name}>
         {label}{required && <span className="ml-1 text-red-600" aria-hidden="true">*</span>}
       </label>
-      <select id={name} className="app-field" aria-invalid={Boolean(error)} aria-required={required} aria-describedby={errorId} {...register(name)} {...props}>
+      <select
+        id={name}
+        className={`app-field ${locked ? 'app-field--locked' : ''}`}
+        aria-invalid={Boolean(error)}
+        aria-required={required}
+        aria-readonly={locked || undefined}
+        tabIndex={locked ? -1 : props.tabIndex}
+        {...register(name)}
+        {...props}
+      >
         <option value="">{placeholder}</option>
         {options.map((option) => <option value={option} key={option}>{option}</option>)}
       </select>

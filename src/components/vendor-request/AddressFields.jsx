@@ -2,7 +2,7 @@ import Input from '../common/Input'
 import Select from '../common/Select'
 import { indianStates } from '../../data/mockData'
 
-export default function AddressFields({ prefix, register, errors }) {
+export default function AddressFields({ prefix, register, errors, lockedFields = [] }) {
   return (
     <div className="form-grid">
       <Input
@@ -11,6 +11,8 @@ export default function AddressFields({ prefix, register, errors }) {
         name={`${prefix}Address1`}
         register={register}
         error={errors[`${prefix}Address1`]}
+        hint={lockedFields.includes(`${prefix}Address1`) ? 'Filled automatically from GSTIN lookup' : undefined}
+        locked={lockedFields.includes(`${prefix}Address1`)}
         required
       />
       <Input
@@ -33,6 +35,7 @@ export default function AddressFields({ prefix, register, errors }) {
         register={register}
         error={errors[`${prefix}State`]}
         options={indianStates}
+        locked={lockedFields.includes(`${prefix}State`)}
         required
       />
       <Input
@@ -41,6 +44,8 @@ export default function AddressFields({ prefix, register, errors }) {
         register={register}
         error={errors[`${prefix}PostalCode`]}
         inputMode="numeric"
+        hint={lockedFields.includes(`${prefix}PostalCode`) ? 'Filled automatically from GSTIN lookup' : undefined}
+        locked={lockedFields.includes(`${prefix}PostalCode`)}
         required
       />
     </div>
