@@ -25,7 +25,7 @@ export default function InvoiceDashboardPage() {
                 Invoice management
               </h1>
               <p className="mt-3 text-xs leading-5 text-slate-600">
-                Upload supplier invoices and keep track of everything submitted from this browser.
+                Upload invoices, review extracted details, and open the original source documents.
               </p>
             </div>
 
@@ -43,7 +43,7 @@ export default function InvoiceDashboardPage() {
             <div className="mt-auto pt-5">
               <div className="flex items-center gap-2 rounded-lg border border-blue-200/80 bg-white/75 px-3 py-2.5 text-[11px] font-bold text-navy-900">
                 <FileStack size={15} className="shrink-0 text-brand-600" />
-                Invoices are stored in this browser tab only.
+                Uploaded invoices are linked to your vendor account.
               </div>
             </div>
           </aside>
@@ -53,7 +53,7 @@ export default function InvoiceDashboardPage() {
               <div>
                 <p className="eyebrow">Invoices</p>
                 <h2 className="mt-1 text-xl font-extrabold tracking-[-0.03em] text-navy-950 sm:text-2xl">Upload &amp; track invoices</h2>
-                <p className="mt-1 text-xs leading-5 text-slate-600">Upload supplier invoices below — they’ll show up in the list for this session.</p>
+                <p className="mt-1 text-xs leading-5 text-slate-600">Upload, track, and securely preview your submitted invoice documents.</p>
               </div>
               <span className="inline-flex shrink-0 items-center gap-1.5 self-start rounded-full bg-emerald-50 px-3 py-1.5 text-[11px] font-bold text-emerald-700">
                 <span className="size-1.5 rounded-full bg-emerald-500" /> {invoices.length} uploaded

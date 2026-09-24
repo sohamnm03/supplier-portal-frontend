@@ -11,6 +11,18 @@ function toValidDate(value) {
   return Number.isNaN(date.getTime()) ? new Date() : date
 }
 
+function resolveBlobUrl(invoice) {
+  return invoice.blob_url
+    ?? invoice.blobUrl
+    ?? invoice.document?.blob_url
+    ?? invoice.file?.blob_url
+    ?? invoice.storage?.blob_url
+    ?? invoice.metadata?.blob_url
+    ?? invoice.invoice?.blob_url
+    ?? invoice.invoice_file?.blob_url
+    ?? ''
+}
+
 function normalizeInvoice(invoice, index) {
   const id = invoice.invoice_id ?? invoice.id ?? `invoice-${index}`
   return {
@@ -21,6 +33,7 @@ function normalizeInvoice(invoice, index) {
     type: invoice.mime_type ?? invoice.content_type ?? invoice.type ?? '',
     uploadedAt: toValidDate(invoice.uploaded_at ?? invoice.created_at ?? invoice.invoice_date),
     url: invoice.file_url ?? invoice.document_url ?? invoice.url ?? '',
+    blobUrl: resolveBlobUrl(invoice),
     mainLineItemData: invoice.main_line_item_data ?? invoice.mainLineItemData ?? invoice.line_item_data ?? invoice.line_items ?? null,
     extractionStatus: invoice.status ?? 'completed',
     source: 'api',

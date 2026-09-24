@@ -1,5 +1,6 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
 const GST_API_BASE_URL = import.meta.env.VITE_GST_API_BASE_URL || '/gst-api'
+const INVOICE_PREVIEW_API_URL = import.meta.env.VITE_INVOICE_PREVIEW_API_URL || 'http://127.0.0.1:8000/api/invoice/preview-url'
 
 export async function verifyGstin(gstin) {
   const params = new URLSearchParams({ gstin })
@@ -81,6 +82,28 @@ export async function getVendorInvoices(vendorId) {
 
   const invoices = Array.isArray(body) ? body : body?.invoices ?? body?.data
   return Array.isArray(invoices) ? invoices : []
+}
+
+export async function getInvoicePreviewUrl(blobUrl) {
+  if (!blobUrl) throw new Error('This invoice does not include a blob URL.')
+
+  const params = new URLSearchParams({ blob_name: blobUrl })
+  const response = await fetch(`${INVOICE_PREVIEW_API_URL}?${params}`)
+  const rawBody = await response.text()
+  let body = null
+  try { body = rawBody ? JSON.parse(rawBody) : null } catch { body = rawBody }
+
+  if (!response.ok) {
+    throw new Error(body?.error || body?.message || 'Unable to generate the invoice preview.')
+  }
+
+  const previewUrl = typeof body === 'string'
+    ? body
+    : body?.preview_url || body?.previewUrl || body?.url || body?.sas_url
+      || body?.data?.preview_url || body?.data?.previewUrl || body?.data?.url || body?.data?.sas_url
+
+  if (!previewUrl) throw new Error('The preview service did not return a document URL.')
+  return previewUrl
 }
 
 export async function extractInvoice(vendorId, file) {
