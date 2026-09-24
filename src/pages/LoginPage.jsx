@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { ArrowRight, BadgeCheck, Building2, Check, Clock3, Eye, EyeOff, Landmark, ShieldCheck } from 'lucide-react'
+import { ArrowRight, BadgeCheck, Building2, Check, Clock3, Eye, EyeOff, Landmark, RefreshCw, ShieldCheck } from 'lucide-react'
 import AppLogo from '../components/common/AppLogo'
 import Loader from '../components/common/Loader'
 import useAuth from '../hooks/useAuth'
@@ -18,6 +18,12 @@ const readyItems = [
   { icon: Landmark, label: 'Bank details' },
 ]
 
+const CAPTCHA_CHARACTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+
+function createCaptcha() {
+  return Array.from({ length: 5 }, () => CAPTCHA_CHARACTERS[Math.floor(Math.random() * CAPTCHA_CHARACTERS.length)]).join('')
+}
+
 export default function LoginPage() {
   const { login, logout } = useAuth()
   const navigate = useNavigate()
@@ -25,10 +31,19 @@ export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
+  const [captchaCode, setCaptchaCode] = useState(createCaptcha)
+  const [captchaInput, setCaptchaInput] = useState('')
+  const [captchaError, setCaptchaError] = useState('')
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
   const goToDestination = () => navigate(location.state?.from?.pathname || '/invoices', { replace: true })
+
+  const refreshCaptcha = () => {
+    setCaptchaCode(createCaptcha())
+    setCaptchaInput('')
+    setCaptchaError('')
+  }
 
   const handleSubmit = async (event) => {
     event.preventDefault()
@@ -37,8 +52,19 @@ export default function LoginPage() {
       setError('Enter your email and password to continue.')
       return
     }
+    if (!captchaInput.trim()) {
+      setCaptchaError('Enter the security code shown.')
+      return
+    }
+    if (captchaInput.trim().toUpperCase() !== captchaCode) {
+      setCaptchaError('The security code does not match. Please try again.')
+      setCaptchaCode(createCaptcha())
+      setCaptchaInput('')
+      return
+    }
 
     setError('')
+    setCaptchaError('')
     setSubmitting(true)
     try {
       const session = await loginVendor(normalizedEmail, password)
@@ -50,6 +76,7 @@ export default function LoginPage() {
       setError(requestError?.status === 401
         ? 'Invalid email or password.'
         : requestError?.message || 'Unable to connect to the server. Please try again.')
+      refreshCaptcha()
     } finally {
       setSubmitting(false)
     }
@@ -134,6 +161,40 @@ export default function LoginPage() {
                   {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
               </div>
+            </div>
+
+            <div className="vendor-login__field vendor-login__captcha-field">
+              <label htmlFor="login-captcha">Security check <span aria-hidden="true">*</span></label>
+              <div className="vendor-login__captcha-row">
+                <div className="vendor-login__captcha" aria-label={`Security code: ${captchaCode}`}>
+                  <span className="vendor-login__captcha-code" aria-hidden="true">
+                    {[...captchaCode].map((character, index) => <i key={`${character}-${index}`}>{character}</i>)}
+                  </span>
+                  <button type="button" onClick={refreshCaptcha} aria-label="Generate a new security code" title="New code">
+                    <RefreshCw size={16} />
+                  </button>
+                </div>
+                <input
+                  id="login-captcha"
+                  type="text"
+                  inputMode="text"
+                  autoComplete="off"
+                  spellCheck="false"
+                  placeholder="Enter the code"
+                  value={captchaInput}
+                  onChange={(event) => {
+                    setCaptchaInput(event.target.value.toUpperCase())
+                    if (captchaError) setCaptchaError('')
+                  }}
+                  aria-invalid={Boolean(captchaError)}
+                  aria-describedby="captcha-help"
+                  maxLength={5}
+                  required
+                />
+              </div>
+              <p id="captcha-help" className={captchaError ? 'vendor-login__captcha-error' : 'vendor-login__captcha-help'}>
+                {captchaError || 'Not case-sensitive.'}
+              </p>
             </div>
 
             {error && <div className="vendor-login__error" role="alert">{error}</div>}

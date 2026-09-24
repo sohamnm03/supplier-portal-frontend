@@ -125,12 +125,21 @@
 }
 
 .vendor-login__card {
+  position: relative;
   width: min(100%, 30rem);
   overflow: hidden;
   border: 1px solid #d9e4f1;
   border-radius: 1.25rem;
   background: white;
   box-shadow: 0 24px 65px rgb(15 39 71 / 0.14);
+}
+
+.vendor-login__card::before {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 4px;
+  background: linear-gradient(90deg, #0f56c7, #268cf0);
+  content: '';
 }
 
 .vendor-login__start { padding: 1.9rem 2rem 1.4rem; text-align: center; }
@@ -225,7 +234,8 @@
 .vendor-login__signin-heading p { margin: 0.2rem 0 0; color: #718096; font-size: 0.66rem; }
 .vendor-login__signin-heading svg { color: #26946a; }
 .vendor-login__field { margin-bottom: 0.75rem; }
-.vendor-login__field label { display: block; margin-bottom: 0.35rem; color: #274663; font-size: 0.67rem; font-weight: 750; }
+.vendor-login__field label { display: block; margin-bottom: 0.35rem; color: #183956; font-size: 0.67rem; font-weight: 800; }
+.vendor-login__field label > span { color: #c9362b; }
 
 .vendor-login__field input {
   width: 100%;
@@ -262,9 +272,76 @@
 }
 
 .vendor-login__password button:hover { background: #edf4fc; color: #174f8f; }
+.vendor-login__captcha-field { margin-top: 0.85rem; }
+
+.vendor-login__captcha-row {
+  display: grid;
+  grid-template-columns: minmax(8.5rem, 0.85fr) minmax(0, 1.15fr);
+  gap: 0.55rem;
+}
+
+.vendor-login__captcha {
+  position: relative;
+  display: flex;
+  min-height: 2.65rem;
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid #cbd8e7;
+  border-radius: 0.55rem;
+  background:
+    repeating-linear-gradient(168deg, transparent 0 10px, rgb(23 105 232 / 0.08) 11px 12px),
+    #edf5fd;
+}
+
+.vendor-login__captcha::after {
+  position: absolute;
+  right: 2.45rem;
+  left: 0.5rem;
+  top: 50%;
+  height: 1px;
+  background: rgb(15 86 199 / 0.28);
+  content: '';
+  transform: rotate(-4deg);
+}
+
+.vendor-login__captcha-code {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: space-evenly;
+  padding-inline: 0.55rem 0.25rem;
+  color: #0d4e93;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 1.05rem;
+  font-weight: 850;
+  letter-spacing: 0.05em;
+}
+
+.vendor-login__captcha-code i { position: relative; z-index: 1; font-style: normal; }
+.vendor-login__captcha-code i:nth-child(odd) { transform: translateY(1px) rotate(-7deg); }
+.vendor-login__captcha-code i:nth-child(even) { transform: translateY(-1px) rotate(5deg); }
+
+.vendor-login__captcha button {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  width: 2.35rem;
+  align-self: stretch;
+  border: 0;
+  border-left: 1px solid #cbd8e7;
+  background: rgb(255 255 255 / 0.55);
+  color: #547493;
+  place-items: center;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.vendor-login__captcha button:hover { background: white; color: #1769e8; }
+.vendor-login__captcha-help, .vendor-login__captcha-error { margin: 0.35rem 0 0; font-size: 0.62rem; }
+.vendor-login__captcha-help { color: #71859d; }
+.vendor-login__captcha-error { color: #b42318; font-weight: 700; }
 .vendor-login__error { margin: 0 0 0.7rem; padding: 0.55rem 0.65rem; border: 1px solid #fecaca; border-radius: 0.5rem; background: #fef2f2; color: #b42318; font-size: 0.68rem; font-weight: 650; }
-.vendor-login__secondary { border: 1px solid #b8cbe0; background: white; color: #174f8f; }
-.vendor-login__secondary:hover:not(:disabled) { border-color: #1769e8; background: #f4f8ff; }
+.vendor-login__secondary { border: 0; background: linear-gradient(90deg, #0f56c7, #268cf0); box-shadow: 0 8px 20px rgb(23 105 232 / 0.2); color: white; }
+.vendor-login__secondary:hover:not(:disabled) { box-shadow: 0 10px 24px rgb(23 105 232 / 0.28); transform: translateY(-1px); }
 .vendor-login__secondary:disabled { cursor: not-allowed; opacity: 0.65; }
 
 @media (max-height: 820px) and (min-width: 901px) {
@@ -299,4 +376,5 @@
   .vendor-login__start, .vendor-login__signin { padding-inline: 1.25rem; }
   .vendor-login__divider { margin-inline: 1.25rem; }
   .vendor-login__ready-list span { font-size: 0.58rem; }
+  .vendor-login__captcha-row { grid-template-columns: 1fr; }
 }

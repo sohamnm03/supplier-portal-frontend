@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Building2, Check, MapPin, Pencil, X } from 'lucide-react'
+import { BadgeCheck, Building2, Check, Landmark, MapPin, Pencil, X } from 'lucide-react'
 import { updateVendorProfile } from '../../api/vendorApi'
 import Button from '../common/Button'
 import Loader from '../common/Loader'
@@ -15,9 +15,21 @@ const sections = [
       ['vendor_type', 'Vendor type'],
       ['vendor_category', 'Category'],
       ['vendor_subcategory', 'Subcategory'],
+      ['year_established', 'Year established'],
+      ['currency', 'Transaction currency'],
       ['registration_number', 'Registration number'],
+      ['msme_status', 'MSME status'],
+      ['udyam_number', 'MSME / Udyam number'],
+    ],
+  },
+  {
+    title: 'Tax & compliance',
+    icon: BadgeCheck,
+    fields: [
       ['gstin', 'GSTIN'],
       ['pan', 'PAN'],
+      ['aadhaar_no', 'Aadhaar number'],
+      ['cin', 'CIN'],
     ],
   },
   {
@@ -31,9 +43,26 @@ const sections = [
       ['postal_code', 'Postal / PIN code'],
     ],
   },
+  {
+    title: 'Bank details',
+    icon: Landmark,
+    fields: [
+      ['account_holder_name', 'Account holder name'],
+      ['bank_name', 'Bank name'],
+      ['branch_name', 'Branch name'],
+      ['bank_account_no', 'Account number'],
+      ['ifsc_code', 'IFSC code'],
+    ],
+  },
 ]
 
 const editableKeys = sections.flatMap((section) => section.fields.map(([key]) => key))
+const requiredKeys = new Set([
+  'vendor_legal_name', 'email', 'contact_no', 'pan',
+  'street', 'city', 'district', 'region', 'postal_code',
+  'account_holder_name', 'bank_name', 'branch_name', 'bank_account_no', 'ifsc_code',
+])
+const wideKeys = new Set(['vendor_legal_name', 'street', 'account_holder_name'])
 
 function toDraft(profile) {
   return Object.fromEntries(editableKeys.map((key) => [key, profile?.[key] ?? '']))
@@ -85,7 +114,7 @@ export default function VendorProfilePanel({ open, onClose, profile, onSaved }) 
       role="presentation"
       onMouseDown={(event) => event.target === event.currentTarget && close()}
     >
-      <aside className="flex h-full w-full max-w-xl flex-col bg-white shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="vendor-profile-title">
+      <aside className="flex h-full w-full max-w-2xl flex-col bg-white shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="vendor-profile-title">
         <header className="flex items-start justify-between border-b border-slate-200 px-5 py-4 sm:px-6">
           <div className="min-w-0">
             <p className="eyebrow">Vendor profile</p>
@@ -114,7 +143,7 @@ export default function VendorProfilePanel({ open, onClose, profile, onSaved }) 
                   </h3>
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
                     {fields.map(([key, label, type = 'text']) => (
-                      <div key={key} className={key === 'vendor_legal_name' || key === 'street' ? 'sm:col-span-2' : ''}>
+                      <div key={key} className={wideKeys.has(key) ? 'sm:col-span-2' : ''}>
                         <label htmlFor={`profile-${key}`} className="block text-[11px] font-bold uppercase tracking-[0.04em] text-slate-500">{label}</label>
                         {editing ? (
                           <input
@@ -123,7 +152,7 @@ export default function VendorProfilePanel({ open, onClose, profile, onSaved }) 
                             className="app-field mt-1"
                             value={draft[key]}
                             onChange={(event) => setDraft((current) => ({ ...current, [key]: event.target.value }))}
-                            required={['vendor_legal_name', 'email', 'contact_no', 'pan', 'street', 'city', 'district', 'region', 'postal_code'].includes(key)}
+                            required={requiredKeys.has(key)}
                           />
                         ) : (
                           <p className="mt-1 break-words text-sm font-semibold text-navy-900">{profile[key] || '—'}</p>
