@@ -203,13 +203,9 @@ export default function VendorRequestPage() {
           <div className="flex min-h-0 min-w-0 flex-col px-4 py-3 sm:px-6 xl:px-7">
             <header className="mb-3 flex flex-col gap-2 border-b border-slate-100 pb-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <p className="eyebrow">Secure vendor access</p>
                 <h2 className="mt-1 text-xl font-extrabold tracking-[-0.03em] text-navy-950 sm:text-2xl">Request vendor account</h2>
                 <p className="mt-1 text-xs leading-5 text-slate-600">{FORM_STEPS[step - 1].longTitle} · Fields marked with an asterisk are required.</p>
               </div>
-              <span className="inline-flex shrink-0 items-center gap-1.5 self-start rounded-full bg-emerald-50 px-3 py-1.5 text-[11px] font-bold text-emerald-700">
-                <span className="size-1.5 rounded-full bg-emerald-500" /> Secure form
-              </span>
             </header>
 
             <FormProgress currentStep={step} />
