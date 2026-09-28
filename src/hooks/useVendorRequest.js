@@ -4,7 +4,7 @@ import { vendorRequestSchema } from '../schemas/vendorRequestSchema'
 import { loadDraft } from '../utils/storage'
 
 const defaults = {
-  vendorLegalName: '', vendorPhone: '', vendorEmail: '', vendorType: '', vendorCategory: '', vendorSubcategory: '', yearEstablished: '', currency: 'INR', registrationNumber: '', msmeStatus: 'Not registered', udyamNumber: '',
+  vendorLegalName: '', vendorPhone: '', vendorEmail: '', vendorType: '', yearEstablished: '', currency: 'INR', registrationNumber: '', msmeStatus: 'Not registered', udyamNumber: '',
   registeredAddress1: '', registeredCity: '', registeredDistrict: '', registeredState: '', registeredPostalCode: '',
   pan: '', gstin: '', aadhaar: '', cin: '',
   accountHolderName: '', bankName: '', branchName: '', accountNumber: '', ifsc: '',

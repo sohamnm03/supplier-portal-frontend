@@ -4,7 +4,7 @@ import Input from '../common/Input'
 import Select from '../common/Select'
 import FormSection from './FormSection'
 import Loader from '../common/Loader'
-import { currencies, vendorCategories, vendorSubcategories } from '../../data/mockData'
+import { currencies } from '../../data/mockData'
 import { checkEmailExists, checkPanExists, verifyGstin } from '../../api/vendorApi'
 import useDuplicateCheck from '../../hooks/useDuplicateCheck'
 
@@ -13,7 +13,6 @@ const PAN_PATTERN = /^[A-Z]{5}[0-9]{4}[A-Z]$/
 const GSTIN_PATTERN = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/
 
 export default function VendorInformation({ register, errors, watch, setValue, setError, clearErrors, lockedFields = [], onGstLookupSuccess, onEmailTakenChange, onPanTakenChange, onEmailCheckingChange, onPanCheckingChange }) {
-  const category = watch('vendorCategory')
   const msmeStatus = watch('msmeStatus')
   const vendorEmail = watch('vendorEmail')?.trim() || ''
   const pan = watch('pan')?.trim().toUpperCase() || ''
@@ -166,22 +165,6 @@ export default function VendorInformation({ register, errors, watch, setValue, s
           register={register}
           error={errors.vendorType}
           options={['Individual', 'Proprietorship', 'Partnership', 'Private limited company', 'Public limited company', 'Government entity', 'Other']}
-          required
-        />
-        <Select
-          label="Vendor category"
-          name="vendorCategory"
-          register={register}
-          error={errors.vendorCategory}
-          options={vendorCategories}
-          required
-        />
-        <Select
-          label="Vendor subcategory"
-          name="vendorSubcategory"
-          register={register}
-          error={errors.vendorSubcategory}
-          options={vendorSubcategories[category] || []}
           required
         />
         <Input

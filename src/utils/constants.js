@@ -6,7 +6,7 @@ export const FORM_STEPS = [
 ]
 
 export const STEP_FIELDS = [
-  ['gstin', 'vendorLegalName', 'pan', 'aadhaar', 'vendorPhone', 'vendorEmail', 'vendorType', 'vendorCategory', 'vendorSubcategory', 'yearEstablished', 'currency', 'registrationNumber', 'msmeStatus', 'udyamNumber'],
+  ['gstin', 'vendorLegalName', 'pan', 'aadhaar', 'vendorPhone', 'vendorEmail', 'vendorType', 'yearEstablished', 'currency', 'registrationNumber', 'msmeStatus', 'udyamNumber'],
   ['registeredAddress1', 'registeredCity', 'registeredDistrict', 'registeredState', 'registeredPostalCode', 'cin'],
   ['accountHolderName', 'bankName', 'branchName', 'accountNumber', 'ifsc'],
 ]

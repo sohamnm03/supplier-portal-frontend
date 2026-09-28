@@ -14,7 +14,7 @@ const sections = [
     fields: [
       ['GSTIN', 'gstin'], ['Legal name', 'vendorLegalName'], ['PAN / Tax ID', 'pan'], ['Aadhaar number', 'aadhaar'],
       ['Phone number', 'vendorPhone'], ['Email address', 'vendorEmail'], ['Vendor type', 'vendorType'],
-      ['Category', 'vendorCategory'], ['Subcategory', 'vendorSubcategory'], ['Currency', 'currency'],
+      ['Currency', 'currency'],
       ['Registration no.', 'registrationNumber'], ['MSME status', 'msmeStatus'], ['Udyam no.', 'udyamNumber'],
     ],
   },

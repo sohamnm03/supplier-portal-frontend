@@ -133,8 +133,6 @@ function toVendorPayload(data) {
     contact_no: data.vendorPhone,
     email: data.vendorEmail,
     vendor_type: data.vendorType,
-    vendor_category: data.vendorCategory,
-    vendor_subcategory: data.vendorSubcategory,
     year_established: data.yearEstablished || null,
     currency: data.currency,
     registration_number: data.registrationNumber,

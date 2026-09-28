@@ -13,8 +13,6 @@ const sections = [
       ['email', 'Email address', 'email'],
       ['contact_no', 'Phone number', 'tel'],
       ['vendor_type', 'Vendor type'],
-      ['vendor_category', 'Category'],
-      ['vendor_subcategory', 'Subcategory'],
       ['year_established', 'Year established'],
       ['currency', 'Transaction currency'],
       ['registration_number', 'Registration number'],
