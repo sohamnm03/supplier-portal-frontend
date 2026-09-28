@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { AlertCircle, Paperclip, UploadCloud, X } from 'lucide-react'
+import { AlertCircle, FileText, Paperclip, UploadCloud, X } from 'lucide-react'
 import { formatFileSize } from '../../utils/formatters'
 
 const MAX_SIZE = 10 * 1024 * 1024
@@ -73,14 +73,15 @@ export default function InvoiceUploader({ onFiles, error, onDismissError }) {
       </div>
 
       {queue.length > 0 && (
-        <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="mt-3 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
           {queue.map((item) => (
-            <div key={item.id} className="flex items-center justify-between gap-3 rounded-md border border-[#dce6f1] px-3 py-2">
-              <p className="min-w-0 truncate text-xs font-semibold text-[#29415f]">{item.file.name}</p>
-              <div className="flex shrink-0 items-center gap-2 text-[10px] text-slate-500">
-                {formatFileSize(item.file.size)}
-                <button type="button" onClick={() => setQueue((current) => current.filter((file) => file.id !== item.id))} aria-label={`Remove ${item.file.name}`} className="text-red-500 hover:text-red-700"><X size={14} /></button>
+            <div key={item.id} className="flex items-center gap-3 rounded-lg border border-[#dce6f1] bg-white px-3 py-2.5 shadow-[0_1px_3px_rgba(40,83,130,0.06)]">
+              <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-red-50 text-red-500"><FileText size={18} /></span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[13px] font-bold text-[#102a4c]">{item.file.name}</p>
+                <p className="mt-0.5 text-[11px] font-medium text-[#7189a4]">{formatFileSize(item.file.size)}</p>
               </div>
+              <button type="button" onClick={() => setQueue((current) => current.filter((file) => file.id !== item.id))} aria-label={`Remove ${item.file.name}`} className="grid size-7 shrink-0 place-items-center rounded-md text-red-500 transition hover:bg-red-50"><X size={15} /></button>
             </div>
           ))}
         </div>

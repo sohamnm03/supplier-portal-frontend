@@ -131,9 +131,17 @@ export default function useInvoiceUploads(vendorId) {
 
     setInvoices((current) => current.map((invoice) => (
       invoice.id === id
-        ? { ...invoice, extractionStatus: 'extracting', extractionError: '' }
+        ? { ...invoice, extractionStatus: 'extracting', extractionError: '', extractionProgress: 0 }
         : invoice
     )))
+
+    const progressTimer = setInterval(() => {
+      setInvoices((current) => current.map((invoice) => (
+        invoice.id === id && invoice.extractionStatus === 'extracting'
+          ? { ...invoice, extractionProgress: Math.min(95, (invoice.extractionProgress ?? 0) + Math.max(1, (95 - (invoice.extractionProgress ?? 0)) * 0.12)) }
+          : invoice
+      )))
+    }, 400)
 
     try {
       await extractInvoiceApi(vendorId, target.file)
@@ -155,6 +163,8 @@ export default function useInvoiceUploads(vendorId) {
             }
           : invoice
       )))
+    } finally {
+      clearInterval(progressTimer)
     }
   }, [invoices, vendorId])
 

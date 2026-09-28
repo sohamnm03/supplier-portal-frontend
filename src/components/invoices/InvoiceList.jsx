@@ -9,6 +9,7 @@ import {
   LoaderCircle,
   ScanText,
   Search,
+  ShieldCheck,
   SlidersHorizontal,
   Trash2,
   X,
@@ -52,7 +53,9 @@ const dateValue = (value) => {
 
 const invoiceNumber = (invoice) => pick(invoice, ['invoice_number', 'invoice_no', 'invoice_id'])
 const vendorName = (invoice) => pick(invoice, ['vendor_name', 'extracted_vendor_name', 'supplier_name'], 'Vendor invoice')
-const vendorGstin = (invoice) => pick(invoice, ['vendor_gstin', 'supplier_gstin', 'gstin'])
+const vendorGstin = (invoice) => pick(invoice, ['vendor_tax_id', 'vendor_gstin', 'supplier_gstin', 'gstin'])
+const vendorGstinVerified = (invoice) => Boolean(pick(invoice, ['vendor_gstin_verified']))
+const customerGstin = (invoice) => pick(invoice, ['customer_tax_id', 'customer_gstin', 'billing_gstin', 'buyer_gstin'])
 const totalValue = (invoice) => {
   const direct = pick(invoice, ['total_amount', 'invoice_total', 'amount'], null)
   if (direct !== null) return direct
@@ -73,6 +76,7 @@ export default function InvoiceList({ invoices, onRemove, onExtract, isLoading =
   const [filter, setFilter] = useState('all')
   const [page, setPage] = useState(1)
   const [preview, setPreview] = useState(null)
+  const extractingInvoice = invoices.find((invoice) => invoice.extractionStatus === 'extracting')
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase()
@@ -168,7 +172,12 @@ export default function InvoiceList({ invoices, onRemove, onExtract, isLoading =
                       <tr key={invoice.id} className="transition hover:bg-blue-50/35">
                         <td className="px-5 py-3 align-middle">
                           <p className="max-w-64 truncate text-xs font-extrabold text-[#102a4c]">{vendorName(invoice)}</p>
-                          <p className="mt-1 text-[9px] font-medium tracking-[0.04em] text-[#1769e8]">GST: {display(vendorGstin(invoice))}</p>
+                          {vendorGstin(invoice) && (
+                            <p className="mt-1 flex items-center gap-1 text-[9px] font-medium tracking-[0.04em] text-[#1769e8]">
+                              GST: {vendorGstin(invoice)}
+                              {vendorGstinVerified(invoice) && <ShieldCheck size={11} className="text-emerald-600" />}
+                            </p>
+                          )}
                         </td>
                         <td className="max-w-40 truncate px-4 py-3 text-xs text-[#102a4c]">{pick(invoice, ['uploaded_by', 'uploadedBy'], uploadedBy || '—')}</td>
                         <td className="px-4 py-3 text-xs text-[#102a4c]">{display(invoiceNumber(invoice))}</td>
@@ -182,7 +191,7 @@ export default function InvoiceList({ invoices, onRemove, onExtract, isLoading =
                           <div className="flex items-center justify-center gap-1.5">
                             <ActionButton title={canPreview ? 'View invoice' : 'Preview unavailable'} disabled={!canPreview} onClick={() => openPreview(invoice)}><Eye size={15} /></ActionButton>
                             {invoice.source === 'local' && <ActionButton title="Extract invoice" disabled={invoice.extractionStatus === 'extracting'} onClick={() => onExtract(invoice.id)}>{invoice.extractionStatus === 'extracting' ? <LoaderCircle size={14} className="animate-spin" /> : <ScanText size={14} />}</ActionButton>}
-                            {invoice.source === 'local' && <ActionButton title="Remove invoice" danger onClick={() => onRemove(invoice.id)}><Trash2 size={14} /></ActionButton>}
+                            {invoice.source === 'local' && <ActionButton title="Remove invoice" danger disabled={invoice.extractionStatus === 'extracting'} onClick={() => onRemove(invoice.id)}><Trash2 size={14} /></ActionButton>}
                           </div>
                         </td>
                       </tr>
@@ -206,7 +215,29 @@ export default function InvoiceList({ invoices, onRemove, onExtract, isLoading =
       </section>
 
       <InvoiceDetailModal preview={preview} onClose={() => setPreview(null)} />
+      <ExtractionProgressModal invoice={extractingInvoice} />
     </>
+  )
+}
+
+function ExtractionProgressModal({ invoice }) {
+  if (!invoice) return null
+  const progress = Math.round(invoice.extractionProgress ?? 0)
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-[2px]" role="presentation">
+      <div className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-6 text-center shadow-2xl" role="alertdialog" aria-modal="true" aria-labelledby="extraction-progress-title">
+        <div className="mx-auto grid size-14 place-items-center rounded-full bg-blue-50 text-[#1769e8]">
+          <LoaderCircle size={26} className="animate-spin" />
+        </div>
+        <h2 id="extraction-progress-title" className="mt-4 text-base font-extrabold text-[#102a4c]">Extracting invoice data…</h2>
+        <p className="mt-1 truncate text-xs text-[#59728f]">{invoice.name}</p>
+        <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-blue-100">
+          <div className="h-full rounded-full bg-[#1769e8] transition-[width] duration-300 ease-out" style={{ width: `${progress}%` }} />
+        </div>
+        <p className="mt-2 text-sm font-bold tabular-nums text-[#1769e8]">{progress}%</p>
+        <p className="mt-3 text-[11px] text-[#7189a4]">This can take up to a minute. Please don&apos;t close this page.</p>
+      </div>
+    </div>
   )
 }
 
@@ -291,10 +322,16 @@ function Overview({ invoice }) {
   return (
     <>
       <DetailSection title="Vendor"><div className="grid gap-4 sm:grid-cols-2"><Field label="Vendor Name" value={vendorName(invoice)} /><Field label="GSTIN" value={vendorGstin(invoice)} /><Field wide label="Address" value={pick(invoice, ['vendor_address', 'supplier_address', 'address'])} /></div></DetailSection>
-      <DetailSection title="Customer / Billing"><div className="grid gap-4 sm:grid-cols-2"><Field label="Customer Name" value={pick(invoice, ['customer_name', 'billing_name', 'buyer_name'])} /><Field label="GSTIN" value={pick(invoice, ['customer_gstin', 'billing_gstin', 'buyer_gstin'])} /><Field wide label="Address" value={pick(invoice, ['customer_address', 'billing_address', 'buyer_address'])} /></div></DetailSection>
+      <DetailSection title="Customer / Billing"><div className="grid gap-4 sm:grid-cols-2"><Field label="Customer Name" value={pick(invoice, ['customer_name', 'billing_name', 'buyer_name'])} /><Field label="GSTIN" value={customerGstin(invoice)} /><Field wide label="Address" value={pick(invoice, ['customer_address', 'billing_address', 'buyer_address'])} /></div></DetailSection>
       <DetailSection title="Invoice / Payment"><div className="grid gap-4 sm:grid-cols-2"><Field label="Invoice No." value={invoiceNumber(invoice)} /><Field label="Currency" value={pick(invoice, ['currency'], 'INR')} /><Field label="Invoice Date" value={dateValue(pick(invoice, ['invoice_date']))} /><Field label="Due Date" value={dateValue(pick(invoice, ['due_date']))} /><Field label="Payment Term" value={pick(invoice, ['payment_term', 'payment_terms'])} /></div></DetailSection>
     </>
   )
+}
+
+const taxRate = (tax) => {
+  const value = tax.rate ?? tax.tax_rate
+  if (value === undefined || value === null || value === '') return '—'
+  return String(value).trim().endsWith('%') ? value : `${value}%`
 }
 
 function Amounts({ invoice }) {
@@ -306,7 +343,7 @@ function Amounts({ invoice }) {
     <>
       <DetailSection title="Amounts">
         <div className="grid gap-4 sm:grid-cols-2"><Field label="Sub Total" value={amount(pick(invoice, ['sub_total', 'subtotal', 'taxable_amount'], null), currency)} /><Field label="Total Tax" value={amount(pick(invoice, ['total_tax', 'tax_amount'], null), currency)} /><Field label="Total Amount" value={amount(totalValue(invoice), currency)} /></div>
-        {taxRows.length > 0 && <MiniTable headers={['Tax', 'Rate', 'Amount']} rows={taxRows.map((tax) => [tax.tax_desc ?? tax.name, tax.rate, amount(tax.amount, currency)])} />}
+        {taxRows.length > 0 && <MiniTable headers={['Tax', 'Rate', 'Amount']} rows={taxRows.map((tax) => [tax.tax_desc ?? tax.tax_description ?? tax.name, taxRate(tax), amount(tax.amount ?? tax.tax_amount, currency)])} />}
       </DetailSection>
       <DetailSection title={`Line Items — ${display(invoiceNumber(invoice))}`}><MiniTable headers={['#', 'Description', 'Qty', 'Unit Price', 'Amount']} rows={lineItems.map((item, index) => [index + 1, display(item.description ?? item.item_description), display(item.quantity), amount(item.unit_price, currency), amount(item.total_amount ?? item.taxable_amount ?? item.amount, currency)])} empty="No extracted line items are available." /></DetailSection>
     </>
