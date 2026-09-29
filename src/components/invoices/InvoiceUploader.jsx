@@ -36,7 +36,8 @@ export default function InvoiceUploader({ onFiles, error, onDismissError }) {
           <h1 className="text-[12px] font-extrabold uppercase tracking-[0.055em] text-[#5d6f86]">Invoice Upload</h1>
           <span className="grid min-w-5 place-items-center rounded-full bg-[#eef5fd] px-1.5 py-0.5 text-[11px] font-bold text-[#1769e8]">{queue.length}</span>
         </div>
-        <div className="flex items-center gap-2">
+        {/* index.css sets `font: inherit` on buttons, so size/weight come from this wrapper. */}
+        <div className="flex items-center gap-2 text-xs font-bold">
           <button
             type="button"
             onClick={handleUpload}
@@ -90,7 +91,7 @@ export default function InvoiceUploader({ onFiles, error, onDismissError }) {
       {(error || validationError) && (
         <div role="alert" className="mt-3 flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
           <span className="flex items-center gap-2"><AlertCircle size={14} /> {error || validationError}</span>
-          <button type="button" onClick={() => { setValidationError(''); onDismissError?.() }} className="font-bold">Dismiss</button>
+          <button type="button" onClick={() => { setValidationError(''); onDismissError?.() }}><span className="font-bold">Dismiss</span></button>
         </div>
       )}
     </section>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertCircle,
   ChevronLeft,
@@ -71,23 +71,79 @@ function statusDetails(invoice) {
   return { label: 'Extracted', tone: 'bg-emerald-50 text-emerald-700', filter: 'extracted' }
 }
 
+const uploaderType = (invoice) => (invoice.uploaded_by_type === 'maker' ? 'maker' : 'vendor')
+
+const SOURCE_TABS = [
+  ['all', 'All Invoices'],
+  ['vendor', 'Uploaded by Me'],
+  ['maker', 'Uploaded by Maker'],
+]
+
+const EMPTY_ADVANCED = { dateFrom: '', dateTo: '', minAmount: '', maxAmount: '' }
+
+const isoDate = (value) => {
+  if (!value) return ''
+  const text = String(value)
+  if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10)
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? '' : date.toISOString().slice(0, 10)
+}
+
+function matchesAdvanced(invoice, { dateFrom, dateTo, minAmount, maxAmount }) {
+  if (dateFrom || dateTo) {
+    const date = isoDate(pick(invoice, ['invoice_date']))
+    if (!date || (dateFrom && date < dateFrom) || (dateTo && date > dateTo)) return false
+  }
+  if (minAmount !== '' || maxAmount !== '') {
+    const total = numberValue(totalValue(invoice))
+    if (total === null || (minAmount !== '' && total < Number(minAmount)) || (maxAmount !== '' && total > Number(maxAmount))) return false
+  }
+  return true
+}
+
 export default function InvoiceList({ invoices, onRemove, onExtract, isLoading = false, error = '', uploadedBy = '' }) {
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('all')
+  const [sourceFilter, setSourceFilter] = useState('all')
+  const [advanced, setAdvanced] = useState(EMPTY_ADVANCED)
+  const [filterOpen, setFilterOpen] = useState(false)
+  const filterRef = useRef(null)
   const [page, setPage] = useState(1)
   const [preview, setPreview] = useState(null)
   const extractingInvoice = invoices.find((invoice) => invoice.extractionStatus === 'extracting')
 
+  const sourceCounts = useMemo(() => ({
+    all: invoices.length,
+    vendor: invoices.filter((invoice) => uploaderType(invoice) === 'vendor').length,
+    maker: invoices.filter((invoice) => uploaderType(invoice) === 'maker').length,
+  }), [invoices])
+
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase()
     return invoices.filter((invoice) => {
+      const matchesSource = sourceFilter === 'all' || uploaderType(invoice) === sourceFilter
       const matchesStatus = filter === 'all' || statusDetails(invoice).filter === filter
       const text = `${vendorName(invoice)} ${vendorGstin(invoice)} ${invoiceNumber(invoice)} ${pick(invoice, ['sap_doc'])} ${invoice.name}`.toLowerCase()
-      return matchesStatus && (!term || text.includes(term))
+      return matchesSource && matchesStatus && matchesAdvanced(invoice, advanced) && (!term || text.includes(term))
     })
-  }, [filter, invoices, search])
+  }, [advanced, filter, invoices, search, sourceFilter])
 
-  useEffect(() => setPage(1), [filter, search])
+  const activeAdvancedCount = Object.values(advanced).filter((value) => value !== '').length
+
+  useEffect(() => setPage(1), [filter, search, sourceFilter, advanced])
+
+  useEffect(() => {
+    if (!filterOpen) return undefined
+    const close = (event) => {
+      if (event.type === 'keydown' ? event.key === 'Escape' : !filterRef.current?.contains(event.target)) setFilterOpen(false)
+    }
+    document.addEventListener('mousedown', close)
+    document.addEventListener('keydown', close)
+    return () => {
+      document.removeEventListener('mousedown', close)
+      document.removeEventListener('keydown', close)
+    }
+  }, [filterOpen])
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const currentPage = Math.min(page, pageCount)
   const visible = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
@@ -112,7 +168,7 @@ export default function InvoiceList({ invoices, onRemove, onExtract, isLoading =
 
   return (
     <>
-      <section className="overflow-hidden rounded-xl border border-[#dce6f1] bg-white shadow-[0_4px_16px_rgba(40,83,130,0.04)]">
+      <section className={`overflow-hidden rounded-xl border border-[#dce6f1] bg-white shadow-[0_4px_16px_rgba(40,83,130,0.04)] ${filterOpen ? 'min-h-[440px]' : ''}`}>
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 pb-0 pt-4 sm:px-5">
           <div className="flex items-center gap-2">
             <h2 className="text-[13px] font-extrabold text-[#0b2b52]">Invoice Inbox</h2>
@@ -120,23 +176,54 @@ export default function InvoiceList({ invoices, onRemove, onExtract, isLoading =
           </div>
         </div>
 
-        <div className="mt-2 flex gap-5 overflow-x-auto border-b border-[#dfe7f0] px-4 sm:px-5">
+        {/* Buttons/inputs get `font: inherit` from index.css, so size is set on the parent and weight on an inner span. */}
+        <div className="mt-3 flex gap-2 overflow-x-auto px-4 text-xs sm:px-5" role="tablist" aria-label="Uploaded by">
+          {SOURCE_TABS.map(([value, label]) => (
+            <button key={value} type="button" role="tab" aria-selected={sourceFilter === value} onClick={() => setSourceFilter(value)} className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 transition ${sourceFilter === value ? 'border-[#1769e8] bg-[#1769e8] text-white' : 'border-[#d5e1ed] bg-white text-[#52708f] hover:border-[#1769e8] hover:text-[#1769e8]'}`}>
+              <span className={sourceFilter === value ? 'font-bold' : 'font-medium'}>{label}</span>
+              <span className={`rounded-full px-1.5 text-[10px] font-bold ${sourceFilter === value ? 'bg-white/20 text-white' : 'bg-[#eef5fd] text-[#1769e8]'}`}>{sourceCounts[value]}</span>
+            </button>
+          ))}
+        </div>
+
+        <div className="mt-2 flex gap-5 overflow-x-auto border-b border-[#dfe7f0] px-4 text-xs sm:px-5">
           {filters.map(([value, label]) => (
-            <button key={value} type="button" onClick={() => setFilter(value)} className={`shrink-0 border-b-2 px-0.5 py-2.5 text-xs transition ${filter === value ? 'border-[#1769e8] font-bold text-[#1769e8]' : 'border-transparent font-medium text-[#52708f] hover:text-[#1769e8]'}`}>
-              {label}
+            <button key={value} type="button" onClick={() => setFilter(value)} className={`shrink-0 border-b-2 px-0.5 py-2.5 transition ${filter === value ? 'border-[#1769e8] text-[#1769e8]' : 'border-transparent text-[#52708f] hover:text-[#1769e8]'}`}>
+              <span className={filter === value ? 'font-bold' : 'font-medium'}>{label}</span>
             </button>
           ))}
         </div>
 
         <div className="flex items-center justify-between gap-3 border-b border-[#dfe7f0] bg-[#fbfcfe] px-4 py-2.5 sm:px-5">
-          <label className="relative block w-full max-w-[340px]">
+          <label className="relative block w-full max-w-[340px] text-xs">
             <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#6784a2]" />
             <span className="sr-only">Search invoices</span>
             <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by vendor, invoice no. or id..." className="h-8 w-full rounded-full border border-[#d5e1ed] bg-white pl-9 pr-3 text-xs text-[#29415f] outline-none transition placeholder:text-[#64809e] focus:border-[#1769e8] focus:ring-2 focus:ring-blue-100" />
           </label>
           <div className="flex items-center gap-2">
             <span className="rounded-md border border-[#bfd2e8] bg-white px-2.5 py-1.5 text-[10px] font-bold text-[#29466a]">{filtered.length} total</span>
-            <span className="grid size-8 place-items-center rounded-md border border-[#bfd2e8] bg-white text-[#1769e8]" title="Status filters are available above"><SlidersHorizontal size={14} /></span>
+            <div ref={filterRef} className="relative text-xs">
+              <button type="button" title="Filter invoices" aria-label="Filter invoices" aria-expanded={filterOpen} onClick={() => setFilterOpen((open) => !open)} className={`relative grid size-8 place-items-center rounded-md border text-[#1769e8] transition ${filterOpen || activeAdvancedCount ? 'border-[#1769e8] bg-blue-50' : 'border-[#bfd2e8] bg-white hover:bg-blue-50'}`}>
+                <SlidersHorizontal size={14} />
+                {activeAdvancedCount > 0 && <span className="absolute -right-1.5 -top-1.5 grid size-4 place-items-center rounded-full bg-[#1769e8] text-[9px] font-bold text-white">{activeAdvancedCount}</span>}
+              </button>
+              {filterOpen && (
+                <div role="dialog" aria-label="Filter invoices" className="absolute right-0 top-10 z-20 w-72 rounded-xl border border-[#dce6f1] bg-white p-4 shadow-[0_12px_32px_rgba(40,83,130,0.16)]">
+                  <FilterGroup title="Invoice date">
+                    <FilterInput label="From" type="date" value={advanced.dateFrom} max={advanced.dateTo || undefined} onChange={(value) => setAdvanced((current) => ({ ...current, dateFrom: value }))} />
+                    <FilterInput label="To" type="date" value={advanced.dateTo} min={advanced.dateFrom || undefined} onChange={(value) => setAdvanced((current) => ({ ...current, dateTo: value }))} />
+                  </FilterGroup>
+                  <FilterGroup title="Amount">
+                    <FilterInput label="Min" type="number" min="0" placeholder="0" value={advanced.minAmount} onChange={(value) => setAdvanced((current) => ({ ...current, minAmount: value }))} />
+                    <FilterInput label="Max" type="number" min="0" placeholder="Any" value={advanced.maxAmount} onChange={(value) => setAdvanced((current) => ({ ...current, maxAmount: value }))} />
+                  </FilterGroup>
+                  <div className="mt-3 flex items-center justify-between">
+                    <button type="button" disabled={!activeAdvancedCount} onClick={() => setAdvanced(EMPTY_ADVANCED)} className="text-[#1769e8] disabled:text-slate-300"><span className="font-bold">Clear all</span></button>
+                    <button type="button" onClick={() => setFilterOpen(false)} className="rounded-md bg-[#1769e8] px-3 py-1.5 text-white hover:bg-[#0f56c7]"><span className="font-bold">Done</span></button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -179,7 +266,7 @@ export default function InvoiceList({ invoices, onRemove, onExtract, isLoading =
                             </p>
                           )}
                         </td>
-                        <td className="max-w-40 truncate px-4 py-3 text-xs text-[#102a4c]">{pick(invoice, ['uploaded_by', 'uploadedBy'], uploadedBy || '—')}</td>
+                        <td className="max-w-40 truncate px-4 py-3 text-xs text-[#102a4c]">{uploaderType(invoice) === 'maker' ? 'Maker (on your behalf)' : pick(invoice, ['uploaded_by', 'uploadedBy'], uploadedBy || '—')}</td>
                         <td className="px-4 py-3 text-xs text-[#102a4c]">{display(invoiceNumber(invoice))}</td>
                         <td className="px-4 py-3 text-xs font-semibold text-[#102a4c]">{display(pick(invoice, ['sap_doc']))}</td>
                         <td className="whitespace-nowrap px-4 py-3 text-xs text-[#102a4c]">{dateValue(pick(invoice, ['invoice_date']))}</td>
@@ -217,6 +304,24 @@ export default function InvoiceList({ invoices, onRemove, onExtract, isLoading =
       <InvoiceDetailModal preview={preview} onClose={() => setPreview(null)} />
       <ExtractionProgressModal invoice={extractingInvoice} />
     </>
+  )
+}
+
+function FilterGroup({ title, children }) {
+  return (
+    <fieldset className="mb-3 last:mb-0">
+      <legend className="mb-1.5 text-[10px] font-extrabold uppercase tracking-[0.04em] text-[#617995]">{title}</legend>
+      <div className="grid grid-cols-2 gap-2">{children}</div>
+    </fieldset>
+  )
+}
+
+function FilterInput({ label, onChange, ...props }) {
+  return (
+    <label className="block text-[11px] font-medium text-[#52708f]">
+      {label}
+      <input {...props} onChange={(event) => onChange(event.target.value)} className="mt-1 h-8 w-full rounded-md border border-[#d5e1ed] bg-white px-2 text-xs text-[#29415f] outline-none transition focus:border-[#1769e8] focus:ring-2 focus:ring-blue-100" />
+    </label>
   )
 }
 
