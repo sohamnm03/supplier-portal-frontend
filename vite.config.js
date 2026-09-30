@@ -30,13 +30,4 @@ const blobProxy = () => ({
 
 export default defineConfig({
   plugins: [react(), tailwindcss(), blobProxy()],
-  server: {
-    proxy: {
-      '/gst-api': {
-        target: 'http://127.0.0.1:8000',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/gst-api/, ''),
-      },
-    },
-  },
 })

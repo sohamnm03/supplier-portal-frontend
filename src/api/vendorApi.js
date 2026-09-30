@@ -1,10 +1,12 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
-const GST_API_BASE_URL = import.meta.env.VITE_GST_API_BASE_URL || '/gst-api'
-const INVOICE_PREVIEW_API_URL = import.meta.env.VITE_INVOICE_PREVIEW_API_URL || 'http://127.0.0.1:8000/api/invoice/preview-url'
+// Deployed shared-services API (GSTIN verification, invoice preview links; email and OCR are called by the backend).
+const SHARED_SERVICES_URL = (import.meta.env.VITE_SHARED_SERVICES_URL || 'https://fs-quad-shared.azurewebsites.net').replace(/\/+$/, '')
+const GST_VERIFY_API_URL = `${SHARED_SERVICES_URL}/api/verify`
+const INVOICE_PREVIEW_API_URL = `${SHARED_SERVICES_URL}/api/invoice/preview-url`
 
 export async function verifyGstin(gstin) {
   const params = new URLSearchParams({ gstin })
-  const response = await fetch(`${GST_API_BASE_URL}/api/verify?${params}`)
+  const response = await fetch(`${GST_VERIFY_API_URL}?${params}`)
   const body = await response.json().catch(() => null)
 
   if (!response.ok || !body?.success || !body?.valid || !body?.data) {
