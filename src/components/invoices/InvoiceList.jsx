@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   AlertCircle,
   ChevronLeft,
   ChevronRight,
+  ExternalLink,
   Eye,
   FileText,
   Inbox,
@@ -34,7 +36,7 @@ const pick = (invoice, keys, fallback = '') => {
   return fallback
 }
 
-const display = (value) => (value === undefined || value === null || value === '' ? '—' : String(value))
+const display = (value) => (value === undefined || value === null || value === '' ? '' : String(value))
 const numberValue = (value) => {
   if (typeof value === 'number') return Number.isFinite(value) ? value : null
   const parsed = Number(String(value ?? '').replace(/[^0-9.-]/g, ''))
@@ -42,20 +44,21 @@ const numberValue = (value) => {
 }
 const amount = (value, currency = 'INR') => {
   const parsed = numberValue(value)
-  if (parsed === null) return '—'
+  if (parsed === null) return ''
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(parsed)
 }
 const dateValue = (value) => {
-  if (!value) return '—'
+  if (!value) return ''
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
 const invoiceNumber = (invoice) => pick(invoice, ['invoice_number', 'invoice_no', 'invoice_id'])
 const vendorName = (invoice) => pick(invoice, ['vendor_name', 'extracted_vendor_name', 'supplier_name'], 'Vendor invoice')
-const vendorGstin = (invoice) => pick(invoice, ['vendor_tax_id', 'vendor_gstin', 'supplier_gstin', 'gstin'])
+const cleanGstin = (value) => (value ? String(value).replace(/^[\s:;.-]+/, '').trim() : value)
+const vendorGstin = (invoice) => cleanGstin(pick(invoice, ['vendor_tax_id', 'vendor_gstin', 'supplier_gstin', 'gstin']))
 const vendorGstinVerified = (invoice) => Boolean(pick(invoice, ['vendor_gstin_verified']))
-const customerGstin = (invoice) => pick(invoice, ['customer_tax_id', 'customer_gstin', 'billing_gstin', 'buyer_gstin'])
+const customerGstin = (invoice) => cleanGstin(pick(invoice, ['customer_tax_id', 'customer_gstin', 'billing_gstin', 'buyer_gstin']))
 const totalValue = (invoice) => {
   const direct = pick(invoice, ['total_amount', 'invoice_total', 'amount'], null)
   if (direct !== null) return direct
@@ -123,7 +126,7 @@ export default function InvoiceList({ invoices, onRemove, onExtract, isLoading =
     return invoices.filter((invoice) => {
       const matchesSource = sourceFilter === 'all' || uploaderType(invoice) === sourceFilter
       const matchesStatus = filter === 'all' || statusDetails(invoice).filter === filter
-      const text = `${vendorName(invoice)} ${vendorGstin(invoice)} ${invoiceNumber(invoice)} ${pick(invoice, ['sap_doc'])} ${invoice.name}`.toLowerCase()
+      const text = `${vendorName(invoice)} ${vendorGstin(invoice)} ${invoiceNumber(invoice)} ${invoice.name}`.toLowerCase()
       return matchesSource && matchesStatus && matchesAdvanced(invoice, advanced) && (!term || text.includes(term))
     })
   }, [advanced, filter, invoices, search, sourceFilter])
@@ -148,13 +151,45 @@ export default function InvoiceList({ invoices, onRemove, onExtract, isLoading =
   const currentPage = Math.min(page, pageCount)
   const visible = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
 
+  const closePreview = () => setPreview((current) => {
+    if (current?.url?.startsWith('blob:') && current.invoice?.source !== 'local') URL.revokeObjectURL(current.url)
+    return null
+  })
+
   const openPreview = async (invoice) => {
     setPreview({ invoice, loading: true, url: '', error: '' })
     try {
-      const url = invoice.source === 'local' && invoice.url ? invoice.url : await getInvoicePreviewUrl(invoice.blobUrl || invoice.blob_url)
+      if (invoice.source === 'local' && invoice.url) {
+        setPreview({ invoice, loading: false, url: invoice.url, error: '' })
+        return
+      }
+      const sourceUrl = await getInvoicePreviewUrl(invoice.blobUrl || invoice.blob_url)
+      // Load the file ourselves and re-serve it as an in-memory PDF; otherwise the storage link's
+      // "attachment" headers make the browser download the file instead of showing it in the iframe.
+      let response
+      try {
+        response = await fetch(sourceUrl)
+      } catch {
+        // Storage blocks cross-origin reads (CORS): retry through the same-origin proxy.
+        try {
+          response = await fetch(`/blob-proxy?u=${encodeURIComponent(sourceUrl)}`)
+        } catch {
+          response = null
+        }
+      }
+      if (!response) {
+        setPreview({ invoice, loading: false, url: sourceUrl, error: '' })
+        return
+      }
+      if (!response.ok) throw new Error('The invoice file could not be found. It may not have been uploaded properly.')
+      const buffer = await response.arrayBuffer()
+      const isPdf = new TextDecoder().decode(buffer.slice(0, 1024)).includes('%PDF-')
+      if (!buffer.byteLength || !isPdf) throw new Error('This invoice file is empty or is not a valid PDF, so it cannot be previewed.')
+      const url = URL.createObjectURL(new Blob([buffer], { type: 'application/pdf' }))
       setPreview({ invoice, loading: false, url, error: '' })
     } catch (previewError) {
-      setPreview({ invoice, loading: false, url: '', error: previewError?.message || 'Unable to open this invoice.' })
+      const message = previewError instanceof TypeError ? 'The invoice document could not be loaded. Please try again later.' : previewError?.message
+      setPreview({ invoice, loading: false, url: '', error: message || 'Unable to open this invoice.' })
     }
   }
 
@@ -242,7 +277,6 @@ export default function InvoiceList({ invoices, onRemove, onExtract, isLoading =
                     <th className="px-5 py-3">Vendor</th>
                     <th className="px-4 py-3">Uploaded By</th>
                     <th className="px-4 py-3">Invoice No.</th>
-                    <th className="px-4 py-3">SAP Doc</th>
                     <th className="px-4 py-3">Invoice Date</th>
                     <th className="px-4 py-3">Due Date</th>
                     <th className="px-4 py-3">Payment Term</th>
@@ -266,9 +300,8 @@ export default function InvoiceList({ invoices, onRemove, onExtract, isLoading =
                             </p>
                           )}
                         </td>
-                        <td className="max-w-40 truncate px-4 py-3 text-xs text-[#102a4c]">{uploaderType(invoice) === 'maker' ? 'Maker (on your behalf)' : pick(invoice, ['uploaded_by', 'uploadedBy'], uploadedBy || '—')}</td>
+                        <td className="max-w-40 truncate px-4 py-3 text-xs text-[#102a4c]">{uploaderType(invoice) === 'maker' ? 'Maker (on your behalf)' : pick(invoice, ['uploaded_by', 'uploadedBy'], uploadedBy || '')}</td>
                         <td className="px-4 py-3 text-xs text-[#102a4c]">{display(invoiceNumber(invoice))}</td>
-                        <td className="px-4 py-3 text-xs font-semibold text-[#102a4c]">{display(pick(invoice, ['sap_doc']))}</td>
                         <td className="whitespace-nowrap px-4 py-3 text-xs text-[#102a4c]">{dateValue(pick(invoice, ['invoice_date']))}</td>
                         <td className="whitespace-nowrap px-4 py-3 text-xs text-[#102a4c]">{dateValue(pick(invoice, ['due_date']))}</td>
                         <td className="px-4 py-3 text-xs text-[#102a4c]">{display(pick(invoice, ['payment_term', 'payment_terms']))}</td>
@@ -301,7 +334,7 @@ export default function InvoiceList({ invoices, onRemove, onExtract, isLoading =
         </div>
       </section>
 
-      <InvoiceDetailModal preview={preview} onClose={() => setPreview(null)} />
+      <InvoiceDetailModal preview={preview} onClose={closePreview} />
       <ExtractionProgressModal invoice={extractingInvoice} />
     </>
   )
@@ -362,6 +395,7 @@ function EmptyState() {
 
 function InvoiceDetailModal({ preview, onClose }) {
   const [activeTab, setActiveTab] = useState('overview')
+  const [frameLoaded, setFrameLoaded] = useState(false)
   const previewInvoiceId = preview?.invoice?.id
   useEffect(() => {
     if (!previewInvoiceId) return undefined
@@ -371,56 +405,75 @@ function InvoiceDetailModal({ preview, onClose }) {
     return () => document.removeEventListener('keydown', onKey)
   }, [previewInvoiceId, onClose])
 
+  const previewUrl = preview?.url
+  useEffect(() => setFrameLoaded(false), [previewUrl])
+
   if (!preview) return null
   const { invoice, loading, url, error } = preview
   const status = statusDetails(invoice)
 
-  return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/50 p-2 sm:p-4" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <section className="flex h-[94vh] w-full max-w-[1500px] flex-col overflow-hidden rounded-xl bg-white shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="invoice-detail-title">
+  return createPortal(
+    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-950/50 p-2 sm:p-4" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <section className="flex h-full max-h-[calc(100dvh-1rem)] w-full max-w-[1500px] flex-col overflow-hidden rounded-xl bg-white shadow-2xl sm:max-h-[calc(100dvh-2rem)]" role="dialog" aria-modal="true" aria-labelledby="invoice-detail-title">
         <header className="flex shrink-0 items-center justify-between gap-4 border-b-2 border-[#6aafff] bg-[#eef6ff] px-5 py-3.5">
           <div className="flex min-w-0 items-center gap-3">
             <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-[#e6f1ff] text-[#3a73b8]"><FileText size={18} /></span>
             <div className="min-w-0">
-              <h2 id="invoice-detail-title" className="text-[17px] font-extrabold text-[#102a4c]">Invoice Detail</h2>
-              <div className="mt-1 flex items-center gap-2 text-[11px] text-[#59728f]"><span>{display(invoiceNumber(invoice))}</span><span>•</span><span className={`rounded px-2 py-0.5 font-bold ${status.tone}`}>{status.label}</span></div>
+              <h2 id="invoice-detail-title" className="text-[17px] font-bold text-[#102a4c]">Invoice Detail</h2>
+              <div className="mt-1 flex items-center gap-2 text-xs text-[#59728f]"><span>{display(invoiceNumber(invoice))}</span><span>•</span><span className={`rounded px-2 py-0.5 font-bold ${status.tone}`}>{status.label}</span></div>
             </div>
           </div>
           <button type="button" onClick={onClose} aria-label="Close invoice detail" className="grid size-8 place-items-center rounded-full bg-white/80 text-[#5f7895] transition hover:bg-white hover:text-[#102a4c]"><X size={18} /></button>
         </header>
 
-        <div className="grid min-h-0 flex-1 lg:grid-cols-[58%_42%]">
-          <div className="flex min-h-0 flex-col border-b border-[#dce6f1] lg:border-b-0 lg:border-r">
-            <div className="flex shrink-0 gap-6 border-b border-[#dce6f1] px-5">
-              {[['overview', 'Overview'], ['amounts', 'Amounts & Line Items']].map(([value, label]) => <button key={value} type="button" onClick={() => setActiveTab(value)} className={`border-b-2 py-3 text-xs ${activeTab === value ? 'border-[#1769e8] font-bold text-[#1769e8]' : 'border-transparent text-[#58728e]'}`}>{label}</button>)}
+        <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[58%_42%] lg:grid-rows-1 lg:overflow-hidden">
+          <div className="flex min-h-[420px] flex-col border-b lg:min-h-0 border-[#dce6f1] lg:border-b-0 lg:border-r">
+            <div className="flex shrink-0 gap-7 border-b border-[#dce6f1] px-5" role="tablist">
+              {[['overview', 'Overview'], ['amounts', 'Amounts & Line Items']].map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={activeTab === value} onClick={() => setActiveTab(value)} className={`-mb-px border-b-[3px] px-0.5 pb-3 pt-3.5 text-[13px] transition ${activeTab === value ? 'border-[#1769e8] text-[#1769e8]' : 'border-transparent text-[#52708f] hover:border-[#bfd2e8] hover:text-[#1769e8]'}`}><span className="font-semibold">{label}</span></button>)}
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
               {activeTab === 'overview' ? <Overview invoice={invoice} /> : <Amounts invoice={invoice} />}
             </div>
           </div>
 
-          <div className="flex min-h-[420px] flex-col bg-[#fbfcfe]">
-            <div className="shrink-0 px-5 pb-3 pt-4">
-              <p className="text-[10px] font-extrabold uppercase tracking-[0.06em] text-[#526d89]">Original Document</p>
-              <p className="mt-1 text-[11px] text-[#59728f]">File: {invoice.name}</p>
+          <div className="flex min-h-[520px] flex-col bg-[#fbfcfe] lg:min-h-0">
+            <div className="flex shrink-0 items-start justify-between gap-3 px-5 pb-3 pt-4">
+              <div className="min-w-0">
+                <p className="text-[11px] font-bold uppercase tracking-[0.05em] text-[#526d89]">Original Document</p>
+                <p className="mt-1 break-words text-xs text-[#59728f]">File: {invoice.name}</p>
+              </div>
+              {url && !loading && !error && (
+                <a href={url} target="_blank" rel="noopener noreferrer" title="Open in new tab" aria-label="Open in new tab" className="grid size-8 shrink-0 place-items-center rounded-md border border-[#bfd2e8] bg-white text-[#1769e8] transition hover:bg-blue-50">
+                  <ExternalLink size={15} />
+                </a>
+              )}
             </div>
-            <div className="mx-5 mb-4 min-h-0 flex-1 overflow-hidden rounded-lg border border-[#dce6f1] bg-white">
-              {loading ? <PreviewMessage icon={<LoaderCircle className="animate-spin" />} title="Loading preview..." detail="Fetching the original document." />
-                : error ? <PreviewMessage icon={<AlertCircle className="text-red-500" />} title="Could not render this PDF" detail={error} />
-                  : <iframe src={url} title={`Preview of ${invoice.name}`} className="h-full min-h-[400px] w-full border-0 bg-white" />}
+            <div className="relative mx-5 mb-4 min-h-0 flex-1 overflow-hidden rounded-lg border border-[#dce6f1] bg-white">
+              {loading ? <PreviewMessage icon={<LoaderCircle size={28} className="animate-spin text-[#1769e8]" />} title="Loading preview..." detail="Fetching the original document." />
+                : error ? <PreviewMessage icon={<AlertCircle className="text-red-500" />} title="Preview unavailable" detail={error} />
+                  : (
+                    <>
+                      <iframe src={pdfSrc(url)} title={`Preview of ${invoice.name}`} onLoad={() => setFrameLoaded(true)} className="h-full min-h-[400px] w-full border-0 bg-white" />
+                      {!frameLoaded && <div className="absolute inset-0 bg-white"><PreviewMessage icon={<LoaderCircle size={28} className="animate-spin text-[#1769e8]" />} title="Loading preview..." detail="Rendering the document, this may take a moment." /></div>}
+                    </>
+                  )}
             </div>
           </div>
         </div>
       </section>
-    </div>
+    </div>,
+    document.body,
   )
 }
 
+// Hide the built-in thumbnail sidebar and fit the page to the viewer width; toolbar zoom then works from that baseline.
+const pdfSrc = (url) => (url ? `${url.split('#')[0]}#navpanes=0&pagemode=none&view=FitH` : url)
+
 function DetailSection({ title, children }) {
-  return <section className="mb-3.5 rounded-lg border border-[#cfdae7] bg-white px-3.5 py-2.5"><div className="mb-3 flex items-center gap-2 border-b border-[#cfdae7] pb-2"><span className="size-1 rounded-full bg-sky-500" /><h3 className="text-[11px] font-extrabold uppercase tracking-[0.055em] text-[#687586]">{title}</h3></div>{children}</section>
+  return <section className="mb-3.5 rounded-lg border border-[#cfdae7] bg-white px-3.5 py-2.5"><div className="mb-3 flex items-center gap-2 border-b border-[#cfdae7] pb-2"><span className="size-1 rounded-full bg-sky-500" /><h3 className="text-[11px] font-bold uppercase tracking-[0.05em] text-[#526d89]">{title}</h3></div>{children}</section>
 }
 function Field({ label, value, wide = false }) {
-  return <div className={wide ? 'sm:col-span-2' : ''}><p className="text-[10px] font-bold uppercase text-[#607a98]">{label}</p><p className="mt-1.5 break-words text-[12px] font-semibold leading-5 text-[#29415f]">{display(value)}</p></div>
+  return <div className={wide ? 'sm:col-span-2' : ''}><p className="text-[11px] font-semibold uppercase tracking-[0.03em] text-[#607a98]">{label}</p><p className="mt-1.5 min-h-5 break-words text-[13px] font-medium leading-5 text-[#102a4c]">{display(value)}</p></div>
 }
 
 function Overview({ invoice }) {
@@ -435,7 +488,7 @@ function Overview({ invoice }) {
 
 const taxRate = (tax) => {
   const value = tax.rate ?? tax.tax_rate
-  if (value === undefined || value === null || value === '') return '—'
+  if (value === undefined || value === null || value === '') return ''
   return String(value).trim().endsWith('%') ? value : `${value}%`
 }
 
@@ -447,17 +500,41 @@ function Amounts({ invoice }) {
   return (
     <>
       <DetailSection title="Amounts">
-        <div className="grid gap-4 sm:grid-cols-2"><Field label="Sub Total" value={amount(pick(invoice, ['sub_total', 'subtotal', 'taxable_amount'], null), currency)} /><Field label="Total Tax" value={amount(pick(invoice, ['total_tax', 'tax_amount'], null), currency)} /><Field label="Total Amount" value={amount(totalValue(invoice), currency)} /></div>
-        {taxRows.length > 0 && <MiniTable headers={['Tax', 'Rate', 'Amount']} rows={taxRows.map((tax) => [tax.tax_desc ?? tax.tax_description ?? tax.name, taxRate(tax), amount(tax.amount ?? tax.tax_amount, currency)])} />}
+        <div className="grid gap-3 sm:grid-cols-3">
+          <AmountTile label="Sub Total" value={amount(pick(invoice, ['sub_total', 'subtotal', 'taxable_amount'], null), currency)} />
+          <AmountTile label="Total Tax" value={amount(pick(invoice, ['total_tax', 'tax_amount'], null), currency)} />
+          <AmountTile label="Total Amount" value={amount(totalValue(invoice), currency)} highlight />
+        </div>
+        {taxRows.length > 0 && <MiniTable headers={['Tax', 'Rate', 'Amount']} aligns={['center', 'center', 'right']} widths={['40%', '25%', '35%']} rows={taxRows.map((tax) => [tax.tax_desc ?? tax.tax_description ?? tax.name, taxRate(tax), amount(tax.amount ?? tax.tax_amount, currency)])} />}
       </DetailSection>
-      <DetailSection title={`Line Items — ${display(invoiceNumber(invoice))}`}><MiniTable headers={['#', 'Description', 'Qty', 'Unit Price', 'Amount']} rows={lineItems.map((item, index) => [index + 1, display(item.description ?? item.item_description), display(item.quantity), amount(item.unit_price, currency), amount(item.total_amount ?? item.taxable_amount ?? item.amount, currency)])} empty="No extracted line items are available." /></DetailSection>
+      <DetailSection title={`Line Items — ${display(invoiceNumber(invoice))}`}><MiniTable headers={['#', 'Description', 'Qty', 'Unit Price', 'Amount']} aligns={['center', 'left', 'center', 'center', 'right']} widths={['3.5rem', null, '5rem', '8rem', '9rem']} rows={lineItems.map((item, index) => [index + 1, display(item.description ?? item.item_description), display(item.quantity), amount(item.unit_price, currency), amount(item.total_amount ?? item.taxable_amount ?? item.amount, currency)])} empty="No extracted line items are available." /></DetailSection>
     </>
   )
 }
 
-function MiniTable({ headers, rows, empty = '' }) {
+const CELL_ALIGN = { left: 'text-left', center: 'text-center', right: 'text-right' }
+
+// Headers are always centered; body cells follow `aligns` (only amount columns are right-aligned).
+function AmountTile({ label, value, highlight = false }) {
+  return (
+    <div className={`rounded-lg border px-3.5 py-3 ${highlight ? 'border-[#bcd6fb] bg-[#eef5fd]' : 'border-[#e3ebf4] bg-[#fbfcfe]'}`}>
+      <p className="text-[11px] font-semibold uppercase tracking-[0.03em] text-[#607a98]">{label}</p>
+      <p className={`mt-1.5 text-[15px] font-semibold ${highlight ? 'text-[#1769e8]' : 'text-[#102a4c]'}`}>{value}</p>
+    </div>
+  )
+}
+
+function MiniTable({ headers, rows, aligns = [], widths = [], compact = false, empty = '' }) {
   if (!rows.length) return empty ? <p className="py-5 text-center text-xs text-slate-500">{empty}</p> : null
-  return <div className="mt-3 overflow-x-auto"><table className="w-full min-w-[500px] border-collapse text-left"><thead><tr>{headers.map((header) => <th key={header} className="border-b border-[#cfdae7] px-2 py-2 text-[9px] font-extrabold text-[#607a98]">{header}</th>)}</tr></thead><tbody>{rows.map((row, index) => <tr key={index}>{row.map((cell, cellIndex) => <td key={cellIndex} className={`border-b border-[#cfdae7] px-2 py-2 text-[11px] text-[#29415f] ${cellIndex > 1 ? 'text-right' : ''}`}>{display(cell)}</td>)}</tr>)}</tbody></table></div>
+  return (
+    <div className="mt-3 overflow-x-auto">
+      <table className={`table-fixed border-collapse ${compact ? 'w-full max-w-[24rem]' : 'w-full min-w-[460px]'}`}>
+        <colgroup>{headers.map((header, index) => <col key={header} style={widths[index] ? { width: widths[index] } : undefined} />)}</colgroup>
+        <thead><tr>{headers.map((header) => <th key={header} className="border-b border-[#cfdae7] px-2 py-2 text-center text-[11px] font-semibold uppercase tracking-[0.03em] text-[#607a98]">{header}</th>)}</tr></thead>
+        <tbody>{rows.map((row, index) => <tr key={index}>{row.map((cell, cellIndex) => <td key={cellIndex} className={`border-b border-[#cfdae7] px-2 py-2 text-[13px] text-[#102a4c] ${CELL_ALIGN[aligns[cellIndex] || 'left']} ${aligns[cellIndex] === 'right' ? 'pr-4' : ''}`}>{display(cell)}</td>)}</tr>)}</tbody>
+      </table>
+    </div>
+  )
 }
 
 function PreviewMessage({ icon, title, detail }) {

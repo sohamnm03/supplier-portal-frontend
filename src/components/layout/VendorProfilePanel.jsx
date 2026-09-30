@@ -3,6 +3,10 @@ import { BadgeCheck, Building2, Check, Landmark, MapPin, Pencil, X } from 'lucid
 import { updateVendorProfile } from '../../api/vendorApi'
 import Button from '../common/Button'
 import Loader from '../common/Loader'
+import { currencies, indianStates } from '../../data/mockData'
+
+const VENDOR_TYPES = ['Individual', 'Proprietorship', 'Partnership', 'Private limited company', 'Public limited company', 'Government entity', 'Other']
+const MSME_STATUSES = ['Registered', 'Not registered', 'Not applicable']
 
 const sections = [
   {
@@ -12,11 +16,11 @@ const sections = [
       ['vendor_legal_name', 'Vendor legal name'],
       ['email', 'Email address', 'email'],
       ['contact_no', 'Phone number', 'tel'],
-      ['vendor_type', 'Vendor type'],
+      ['vendor_type', 'Vendor type', 'select', VENDOR_TYPES],
       ['year_established', 'Year established'],
-      ['currency', 'Transaction currency'],
-      ['registration_number', 'Registration number'],
-      ['msme_status', 'MSME status'],
+      ['currency', 'Transaction currency', 'select', currencies],
+      ['registration_number', 'Company registration number'],
+      ['msme_status', 'MSME status', 'select', MSME_STATUSES],
       ['udyam_number', 'MSME / Udyam number'],
     ],
   },
@@ -37,7 +41,7 @@ const sections = [
       ['street', 'Address line 1'],
       ['city', 'City'],
       ['district', 'District / County'],
-      ['region', 'State'],
+      ['region', 'State', 'select', indianStates],
       ['postal_code', 'Postal / PIN code'],
     ],
   },
@@ -56,10 +60,11 @@ const sections = [
 
 const editableKeys = sections.flatMap((section) => section.fields.map(([key]) => key))
 const requiredKeys = new Set([
-  'vendor_legal_name', 'email', 'contact_no', 'pan',
+  'vendor_legal_name', 'email', 'contact_no', 'pan', 'vendor_type', 'currency', 'registration_number', 'msme_status',
   'street', 'city', 'district', 'region', 'postal_code',
   'account_holder_name', 'bank_name', 'branch_name', 'bank_account_no', 'ifsc_code',
 ])
+const isRegisteredMsme = (data) => data?.msme_status === 'Registered'
 const wideKeys = new Set(['vendor_legal_name', 'street', 'account_holder_name'])
 
 function toDraft(profile) {
@@ -96,7 +101,8 @@ export default function VendorProfilePanel({ open, onClose, profile, onSaved }) 
     setSaving(true)
     setError('')
     try {
-      const updated = await updateVendorProfile(profile.vendor_id, draft)
+      const payload = isRegisteredMsme(draft) ? draft : { ...draft, udyam_number: '' }
+      const updated = await updateVendorProfile(profile.vendor_id, payload)
       onSaved(updated)
       setEditing(false)
     } catch (saveError) {
@@ -119,41 +125,53 @@ export default function VendorProfilePanel({ open, onClose, profile, onSaved }) 
             <h2 id="vendor-profile-title" className="mt-1 truncate text-xl font-extrabold text-navy-950">
               {profile?.vendor_legal_name || profile?.email || 'Vendor details'}
             </h2>
-            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-              <span>Vendor ID: {profile?.vendor_id ?? '—'}</span>
-              {profile?.status && <span className="rounded-full bg-emerald-50 px-2 py-1 font-bold capitalize text-emerald-700">{profile.status}</span>}
-            </div>
           </div>
-          <button type="button" onClick={close} className="interactive-icon shrink-0" aria-label="Close vendor profile"><X size={20} /></button>
+          <div className="flex shrink-0 items-center gap-2">
+            {profile?.status && <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-bold capitalize text-emerald-700">{profile.status}</span>}
+            <button type="button" onClick={close} className="interactive-icon" aria-label="Close vendor profile"><X size={20} /></button>
+          </div>
         </header>
 
         {!profile ? (
           <div className="flex flex-1 items-center justify-center gap-2 text-sm font-semibold text-slate-600"><Loader /> Loading vendor details...</div>
         ) : (
           <form className="flex min-h-0 flex-1 flex-col" onSubmit={save}>
-            <div className="flex-1 space-y-6 overflow-y-auto px-5 py-5 sm:px-6">
+            <div className="flex-1 space-y-4 overflow-y-auto text-[13px] px-5 py-4 sm:px-6">
               {error && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>}
+
+              {editing && <p className="text-xs text-slate-500">Fields marked with <span className="text-red-600">*</span> are required.</p>}
 
               {sections.map(({ title, icon: Icon, fields }) => (
                 <section key={title}>
-                  <h3 className="flex items-center gap-2 border-b border-slate-100 pb-2 text-sm font-extrabold text-navy-900">
-                    <Icon size={16} className="text-brand-600" /> {title}
+                  <h3 className="flex items-center gap-2 border-b border-slate-100 pb-1.5 text-[13px] font-bold text-navy-900">
+                    <Icon size={15} className="text-brand-600" /> {title}
                   </h3>
-                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                    {fields.map(([key, label, type = 'text']) => (
+                  <div className="mt-2.5 grid gap-x-3 gap-y-2.5 sm:grid-cols-2">
+                    {fields.filter(([key]) => key !== 'udyam_number' || isRegisteredMsme(editing ? draft : profile)).map(([key, label, type = 'text', options]) => (
                       <div key={key} className={wideKeys.has(key) ? 'sm:col-span-2' : ''}>
-                        <label htmlFor={`profile-${key}`} className="block text-[11px] font-bold uppercase tracking-[0.04em] text-slate-500">{label}</label>
-                        {editing ? (
-                          <input
+                        <label htmlFor={`profile-${key}`} className="block text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-500">{label}{editing && (requiredKeys.has(key) || key === 'udyam_number') && <span className="ml-1 text-red-600" aria-hidden="true">*</span>}</label>
+                        {editing && type === 'select' ? (
+                          <select
                             id={`profile-${key}`}
-                            type={type}
-                            className="app-field mt-1"
+                            className="app-field mt-1 min-h-8 rounded-md px-2.5 py-1 leading-5"
                             value={draft[key]}
                             onChange={(event) => setDraft((current) => ({ ...current, [key]: event.target.value }))}
                             required={requiredKeys.has(key)}
+                          >
+                            <option value="">Select an option</option>
+                            {(draft[key] && !options.includes(draft[key]) ? [draft[key], ...options] : options).map((option) => <option key={option} value={option}>{option}</option>)}
+                          </select>
+                        ) : editing ? (
+                          <input
+                            id={`profile-${key}`}
+                            type={type}
+                            className="app-field mt-1 min-h-8 rounded-md px-2.5 py-1 leading-5"
+                            value={draft[key]}
+                            onChange={(event) => setDraft((current) => ({ ...current, [key]: event.target.value }))}
+                            required={requiredKeys.has(key) || key === 'udyam_number'}
                           />
                         ) : (
-                          <p className="mt-1 break-words text-sm font-semibold text-navy-900">{profile[key] || '—'}</p>
+                          <p className="mt-0.5 min-h-5 break-words text-[13px] font-semibold text-navy-900">{profile[key] || '—'}</p>
                         )}
                       </div>
                     ))}
@@ -162,14 +180,14 @@ export default function VendorProfilePanel({ open, onClose, profile, onSaved }) 
               ))}
             </div>
 
-            <footer className="flex justify-end gap-2 border-t border-slate-200 bg-white px-5 py-4 sm:px-6">
+            <footer className="flex justify-end gap-2 border-t border-slate-200 bg-white text-[13px] px-5 py-3 sm:px-6">
               {editing ? (
                 <>
-                  <Button type="button" variant="secondary" onClick={cancelEdit} disabled={saving}>Cancel</Button>
-                  <Button type="submit" disabled={saving}>{saving ? <><Loader /> Saving...</> : <><Check size={17} /> Save changes</>}</Button>
+                  <Button className="min-h-9! px-4! py-1.5!" type="button" variant="secondary" onClick={cancelEdit} disabled={saving}>Cancel</Button>
+                  <Button className="min-h-9! px-4! py-1.5!" type="submit" disabled={saving}>{saving ? <><Loader /> Saving...</> : <><Check size={17} /> Save changes</>}</Button>
                 </>
               ) : (
-                <Button type="button" onClick={() => setEditing(true)}><Pencil size={16} /> Edit details</Button>
+                <Button className="min-h-9! px-4! py-1.5!" type="button" onClick={() => setEditing(true)}><Pencil size={16} /> Edit details</Button>
               )}
             </footer>
           </form>
