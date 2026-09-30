@@ -69,9 +69,16 @@ const totalValue = (invoice) => {
 function statusDetails(invoice) {
   const status = String(invoice.extractionStatus ?? invoice.status ?? '').toLowerCase()
   if (status === 'failed' || status === 'rejected') return { label: status === 'rejected' ? 'Rejected' : 'Failed', tone: 'bg-red-50 text-red-700', filter: 'failed' }
-  if (['extracting', 'processing', 'pending', 'pending approval'].includes(status)) return { label: 'Processing', tone: 'bg-amber-50 text-amber-700', filter: 'processing' }
+  if (['queued', 'extracting', 'processing', 'pending', 'pending approval'].includes(status)) return { label: 'Processing', tone: 'bg-amber-50 text-amber-700', filter: 'processing' }
   if (invoice.source === 'local' || status === 'ready') return { label: 'Ready', tone: 'bg-blue-50 text-blue-700', filter: 'ready' }
   return { label: 'Extracted', tone: 'bg-emerald-50 text-emerald-700', filter: 'extracted' }
+}
+
+// Newest uploads first; fall back to the (numeric) id when timestamps are equal or missing.
+const byNewestUpload = (a, b) => {
+  const timeDiff = (new Date(b.uploadedAt).getTime() || 0) - (new Date(a.uploadedAt).getTime() || 0)
+  if (timeDiff) return timeDiff
+  return (Number(b.id) || 0) - (Number(a.id) || 0)
 }
 
 const uploaderType = (invoice) => (invoice.uploaded_by_type === 'maker' ? 'maker' : 'vendor')
@@ -104,7 +111,7 @@ function matchesAdvanced(invoice, { dateFrom, dateTo, minAmount, maxAmount }) {
   return true
 }
 
-export default function InvoiceList({ invoices, onRemove, onExtract, isLoading = false, error = '', uploadedBy = '' }) {
+export default function InvoiceList({ invoices, onRemove, onExtract, isLoading = false, error = '', uploadedBy = '', uploadSignal = 0 }) {
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('all')
   const [sourceFilter, setSourceFilter] = useState('all')
@@ -123,7 +130,7 @@ export default function InvoiceList({ invoices, onRemove, onExtract, isLoading =
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase()
-    return invoices.filter((invoice) => {
+    return [...invoices].sort(byNewestUpload).filter((invoice) => {
       const matchesSource = sourceFilter === 'all' || uploaderType(invoice) === sourceFilter
       const matchesStatus = filter === 'all' || statusDetails(invoice).filter === filter
       const text = `${vendorName(invoice)} ${vendorGstin(invoice)} ${invoiceNumber(invoice)} ${invoice.name}`.toLowerCase()
@@ -134,6 +141,15 @@ export default function InvoiceList({ invoices, onRemove, onExtract, isLoading =
   const activeAdvancedCount = Object.values(advanced).filter((value) => value !== '').length
 
   useEffect(() => setPage(1), [filter, search, sourceFilter, advanced])
+
+  // After an upload, jump to "Uploaded by Me" so the new invoice is visible right away.
+  useEffect(() => {
+    if (!uploadSignal) return
+    setSourceFilter('vendor')
+    setFilter('all')
+    setSearch('')
+    setAdvanced(EMPTY_ADVANCED)
+  }, [uploadSignal])
 
   useEffect(() => {
     if (!filterOpen) return undefined
@@ -310,8 +326,8 @@ export default function InvoiceList({ invoices, onRemove, onExtract, isLoading =
                         <td className="px-5 py-3">
                           <div className="flex items-center justify-center gap-1.5">
                             <ActionButton title={canPreview ? 'View invoice' : 'Preview unavailable'} disabled={!canPreview} onClick={() => openPreview(invoice)}><Eye size={15} /></ActionButton>
-                            {invoice.source === 'local' && <ActionButton title="Extract invoice" disabled={invoice.extractionStatus === 'extracting'} onClick={() => onExtract(invoice.id)}>{invoice.extractionStatus === 'extracting' ? <LoaderCircle size={14} className="animate-spin" /> : <ScanText size={14} />}</ActionButton>}
-                            {invoice.source === 'local' && <ActionButton title="Remove invoice" danger disabled={invoice.extractionStatus === 'extracting'} onClick={() => onRemove(invoice.id)}><Trash2 size={14} /></ActionButton>}
+                            {invoice.source === 'local' && invoice.extractionStatus === 'failed' && <ActionButton title="Retry extraction" onClick={() => onExtract(invoice.id)}><ScanText size={14} /></ActionButton>}
+                            {invoice.source === 'local' && <ActionButton title="Remove invoice" danger disabled={['queued', 'extracting'].includes(invoice.extractionStatus)} onClick={() => onRemove(invoice.id)}><Trash2 size={14} /></ActionButton>}
                           </div>
                         </td>
                       </tr>
@@ -414,7 +430,7 @@ function InvoiceDetailModal({ preview, onClose }) {
 
   return createPortal(
     <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-950/50 p-2 sm:p-4" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <section className="flex h-full max-h-[calc(100dvh-1rem)] w-full max-w-[1500px] flex-col overflow-hidden rounded-xl bg-white shadow-2xl sm:max-h-[calc(100dvh-2rem)]" role="dialog" aria-modal="true" aria-labelledby="invoice-detail-title">
+      <section className="flex h-[86dvh] max-h-[calc(100dvh-1rem)] w-full max-w-[1200px] flex-col overflow-hidden rounded-xl bg-white shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="invoice-detail-title">
         <header className="flex shrink-0 items-center justify-between gap-4 border-b-2 border-[#6aafff] bg-[#eef6ff] px-5 py-3.5">
           <div className="flex min-w-0 items-center gap-3">
             <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-[#e6f1ff] text-[#3a73b8]"><FileText size={18} /></span>
@@ -428,8 +444,8 @@ function InvoiceDetailModal({ preview, onClose }) {
 
         <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[58%_42%] lg:grid-rows-1 lg:overflow-hidden">
           <div className="flex min-h-[420px] flex-col border-b lg:min-h-0 border-[#dce6f1] lg:border-b-0 lg:border-r">
-            <div className="flex shrink-0 gap-7 border-b border-[#dce6f1] px-5" role="tablist">
-              {[['overview', 'Overview'], ['amounts', 'Amounts & Line Items']].map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={activeTab === value} onClick={() => setActiveTab(value)} className={`-mb-px border-b-[3px] px-0.5 pb-3 pt-3.5 text-[13px] transition ${activeTab === value ? 'border-[#1769e8] text-[#1769e8]' : 'border-transparent text-[#52708f] hover:border-[#bfd2e8] hover:text-[#1769e8]'}`}><span className="font-semibold">{label}</span></button>)}
+            <div className="flex shrink-0 gap-5 border-b border-[#dce6f1] px-5 text-xs" role="tablist">
+              {[['overview', 'Overview'], ['amounts', 'Amounts & Line Items']].map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={activeTab === value} onClick={() => setActiveTab(value)} className={`-mb-px border-b-2 py-3 transition ${activeTab === value ? 'border-[#1769e8] text-[#1769e8]' : 'border-transparent text-[#58728e] hover:text-[#1769e8]'}`}><span className={activeTab === value ? 'font-bold' : 'font-medium'}>{label}</span></button>)}
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
               {activeTab === 'overview' ? <Overview invoice={invoice} /> : <Amounts invoice={invoice} />}

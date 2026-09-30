@@ -1,15 +1,22 @@
 import { useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { ArrowLeft, ChevronRight, Home, LogOut } from 'lucide-react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { ArrowLeft, ChevronRight, FilePenLine, FileText, Home, LogOut } from 'lucide-react'
 import AppLogo from '../common/AppLogo'
 import useAuth from '../../hooks/useAuth'
 import VendorProfilePanel from './VendorProfilePanel'
 import { getVendorProfile } from '../../api/vendorApi'
 
+const NAV_ITEMS = [
+  { to: '/invoices', label: 'Invoices', icon: FileText },
+  { to: '/update-requests', label: 'Update Requests', icon: FilePenLine },
+]
+
 export default function AppShell({ breadcrumb, children, backTo }) {
   const { logout, user, profile, updateProfile } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const [profileOpen, setProfileOpen] = useState(false)
+  const showSidebar = user?.role === 'user' && !backTo
   const homePath = user?.role === 'guest' ? '/request-vendor' : '/invoices'
 
   useEffect(() => {
@@ -75,7 +82,35 @@ export default function AppShell({ breadcrumb, children, backTo }) {
         </div>
       </header>}
 
-      <main className={`app-shell__main relative z-10 flex-1 py-2 sm:py-3 ${backTo ? 'guest-shell__main flex min-h-0 flex-col pt-3 sm:pt-4' : ''}`}>
+      <div className="relative z-10 flex min-h-0 flex-1">
+        {showSidebar && (
+          <aside className="group no-print hidden w-14 shrink-0 overflow-hidden border-r border-slate-200 bg-white px-2 py-4 transition-[width] duration-200 ease-out hover:w-56 focus-within:w-56 md:block" aria-label="Sections">
+            {/* Icon rail that widens (and moves the page over) while hovered or focused. */}
+            <div className="w-52">
+              <p className="h-4 whitespace-nowrap px-3 pb-2 text-[11px] font-bold uppercase tracking-[0.06em] text-slate-500 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">Workspace</p>
+              <nav className="mt-2 flex flex-col gap-1">
+                {NAV_ITEMS.map(({ to, label, icon: Icon }) => {
+                  const active = location.pathname === to
+                  return (
+                    <Link key={to} to={to} title={label} aria-label={label} aria-current={active ? 'page' : undefined} className={`flex items-center gap-3 rounded-lg px-2.5 py-2.5 text-[13px] transition ${active ? 'bg-brand-50 text-brand-700' : 'text-slate-600 hover:bg-slate-50 hover:text-navy-900'}`}>
+                      <Icon size={18} className="shrink-0" />
+                      <span className={`whitespace-nowrap opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 ${active ? 'font-bold' : 'font-medium'}`}>{label}</span>
+                    </Link>
+                  )
+                })}
+              </nav>
+            </div>
+          </aside>
+        )}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          {showSidebar && (
+            <nav className="no-print flex gap-1 overflow-x-auto border-b border-slate-200 bg-white/90 px-3 py-2 md:hidden" aria-label="Sections">
+              {NAV_ITEMS.map(({ to, label }) => (
+                <Link key={to} to={to} className={`shrink-0 rounded-md px-3 py-1.5 text-xs font-semibold ${location.pathname === to ? 'bg-brand-50 text-brand-700' : 'text-slate-600'}`}>{label}</Link>
+              ))}
+            </nav>
+          )}
+      <main className={`app-shell__main relative flex-1 min-w-0 py-2 sm:py-3 ${backTo ? 'guest-shell__main flex min-h-0 flex-col pt-3 sm:pt-4' : ''}`}>
         {backTo && (
           <div className="no-print mx-auto mb-2 w-full shrink-0 px-3 sm:px-4">
             <Link
@@ -88,7 +123,9 @@ export default function AppShell({ breadcrumb, children, backTo }) {
         )}
         {children}
       </main>
-      <VendorProfilePanel open={profileOpen} onClose={() => setProfileOpen(false)} profile={profile} onSaved={updateProfile} />
+        </div>
+      </div>
+      <VendorProfilePanel open={profileOpen} onClose={() => setProfileOpen(false)} profile={profile} />
     </div>
   )
 }

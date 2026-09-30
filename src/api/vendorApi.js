@@ -58,19 +58,31 @@ export async function getVendorProfile(vendorId) {
   return Array.isArray(body) ? body[0] : body
 }
 
-export async function updateVendorProfile(vendorId, details) {
-  const response = await fetch(`${API_BASE_URL}/vendors`, {
-    method: 'PATCH',
+export async function createUpdateRequest(vendorId, details) {
+  const response = await fetch(`${API_BASE_URL}/vendors/update-requests`, {
+    method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...details, vendor_id: vendorId }),
+    body: JSON.stringify({ vendor_id: vendorId, details }),
   })
   const body = await response.json().catch(() => null)
 
   if (!response.ok) {
-    throw new Error(body?.error || 'Unable to update vendor details.')
+    throw new Error(body?.error || 'Unable to send the update request.')
   }
 
   return body
+}
+
+export async function getUpdateRequests(vendorId) {
+  const params = new URLSearchParams({ vendor_id: String(vendorId) })
+  const response = await fetch(`${API_BASE_URL}/vendors/update-requests?${params}`)
+  const body = await response.json().catch(() => null)
+
+  if (!response.ok) {
+    throw new Error(body?.error || 'Unable to load update requests.')
+  }
+
+  return Array.isArray(body) ? body : []
 }
 
 export async function getVendorInvoices(vendorId) {

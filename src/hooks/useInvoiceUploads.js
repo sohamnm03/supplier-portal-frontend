@@ -75,9 +75,47 @@ export default function useInvoiceUploads(vendorId) {
     return () => { ignore = true }
   }, [vendorId])
 
+  const patchInvoice = useCallback((id, changes) => {
+    setInvoices((current) => current.map((invoice) => (invoice.id === id ? { ...invoice, ...changes } : invoice)))
+  }, [])
+
+  const extractItem = useCallback(async (item) => {
+    if (!vendorId) {
+      patchInvoice(item.id, { extractionStatus: 'failed', extractionError: 'Vendor ID is missing. Please sign in again.' })
+      return
+    }
+
+    patchInvoice(item.id, { extractionStatus: 'extracting', extractionError: '', extractionProgress: 0 })
+
+    const progressTimer = setInterval(() => {
+      setInvoices((current) => current.map((invoice) => (
+        invoice.id === item.id && invoice.extractionStatus === 'extracting'
+          ? { ...invoice, extractionProgress: Math.min(95, (invoice.extractionProgress ?? 0) + Math.max(1, (95 - (invoice.extractionProgress ?? 0)) * 0.12)) }
+          : invoice
+      )))
+    }, 400)
+
+    try {
+      await extractInvoiceApi(vendorId, item.file)
+      const records = await getVendorInvoices(vendorId)
+      const remoteInvoices = records.map(normalizeInvoice)
+      URL.revokeObjectURL(item.url)
+      setInvoices((current) => [
+        ...current.filter((invoice) => invoice.source === 'local' && invoice.id !== item.id),
+        ...remoteInvoices,
+      ])
+      setLoadError('')
+    } catch (requestError) {
+      patchInvoice(item.id, { extractionStatus: 'failed', extractionError: requestError?.message || 'Unable to extract the invoice.' })
+    } finally {
+      clearInterval(progressTimer)
+    }
+  }, [patchInvoice, vendorId])
+
+  // Uploaded files are extracted straight away, one after another; there is no manual extract step.
   const addFiles = useCallback((fileList) => {
     const files = Array.from(fileList || [])
-    if (!files.length) return
+    if (!files.length) return false
 
     const accepted = []
     const rejected = []
@@ -87,25 +125,26 @@ export default function useInvoiceUploads(vendorId) {
       accepted.push(file)
     })
 
-    if (accepted.length) {
-      setInvoices((current) => [
-        ...accepted.map((file) => ({
-          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          name: file.name,
-          size: file.size,
-          type: file.type,
-          uploadedAt: new Date(),
-          url: URL.createObjectURL(file),
-          file,
-          extractionStatus: 'ready',
-          extractionError: '',
-          source: 'local',
-        })),
-        ...current,
-      ])
+    const items = accepted.map((file) => ({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      name: file.name,
+      size: file.size,
+      type: file.type,
+      uploadedAt: new Date(),
+      url: URL.createObjectURL(file),
+      file,
+      extractionStatus: 'queued',
+      extractionError: '',
+      source: 'local',
+    }))
+
+    if (items.length) {
+      setInvoices((current) => [...items, ...current])
+      ;(async () => { for (const item of items) await extractItem(item) })()
     }
     setError(rejected.length ? `Couldn't upload ${rejected.join(', ')}` : '')
-  }, [])
+    return items.length > 0
+  }, [extractItem])
 
   const removeInvoice = useCallback((id) => {
     setInvoices((current) => {
@@ -117,56 +156,11 @@ export default function useInvoiceUploads(vendorId) {
 
   const clearError = useCallback(() => setError(''), [])
 
-  const extractInvoice = useCallback(async (id) => {
+  // Retry for an upload whose extraction failed.
+  const extractInvoice = useCallback((id) => {
     const target = invoices.find((invoice) => invoice.id === id)
-    if (!target?.file || target.source !== 'local') return
-    if (!vendorId) {
-      setInvoices((current) => current.map((invoice) => (
-        invoice.id === id
-          ? { ...invoice, extractionStatus: 'failed', extractionError: 'Vendor ID is missing. Please sign in again.' }
-          : invoice
-      )))
-      return
-    }
-
-    setInvoices((current) => current.map((invoice) => (
-      invoice.id === id
-        ? { ...invoice, extractionStatus: 'extracting', extractionError: '', extractionProgress: 0 }
-        : invoice
-    )))
-
-    const progressTimer = setInterval(() => {
-      setInvoices((current) => current.map((invoice) => (
-        invoice.id === id && invoice.extractionStatus === 'extracting'
-          ? { ...invoice, extractionProgress: Math.min(95, (invoice.extractionProgress ?? 0) + Math.max(1, (95 - (invoice.extractionProgress ?? 0)) * 0.12)) }
-          : invoice
-      )))
-    }, 400)
-
-    try {
-      await extractInvoiceApi(vendorId, target.file)
-      const records = await getVendorInvoices(vendorId)
-      const remoteInvoices = records.map(normalizeInvoice)
-      URL.revokeObjectURL(target.url)
-      setInvoices((current) => [
-        ...current.filter((invoice) => invoice.source === 'local' && invoice.id !== id),
-        ...remoteInvoices,
-      ])
-      setLoadError('')
-    } catch (requestError) {
-      setInvoices((current) => current.map((invoice) => (
-        invoice.id === id
-          ? {
-              ...invoice,
-              extractionStatus: 'failed',
-              extractionError: requestError?.message || 'Unable to extract the invoice.',
-            }
-          : invoice
-      )))
-    } finally {
-      clearInterval(progressTimer)
-    }
-  }, [invoices, vendorId])
+    if (target?.file && target.source === 'local') extractItem(target)
+  }, [extractItem, invoices])
 
   return { invoices, addFiles, removeInvoice, extractInvoice, error, clearError, loadError, isLoading }
 }

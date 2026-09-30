@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { BadgeCheck, Building2, Check, Landmark, MapPin, Pencil, X } from 'lucide-react'
-import { updateVendorProfile } from '../../api/vendorApi'
+import { BadgeCheck, Building2, Clock, Landmark, MapPin, Pencil, Send, X } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { createUpdateRequest, getUpdateRequests } from '../../api/vendorApi'
 import Button from '../common/Button'
 import Loader from '../common/Loader'
 import { currencies, indianStates } from '../../data/mockData'
@@ -14,7 +15,7 @@ const sections = [
     icon: Building2,
     fields: [
       ['vendor_legal_name', 'Vendor legal name'],
-      ['email', 'Email address', 'email'],
+      ['email', 'Email address', 'email', null, true],
       ['contact_no', 'Phone number', 'tel'],
       ['vendor_type', 'Vendor type', 'select', VENDOR_TYPES],
       ['year_established', 'Year established'],
@@ -71,18 +72,30 @@ function toDraft(profile) {
   return Object.fromEntries(editableKeys.map((key) => [key, profile?.[key] ?? '']))
 }
 
-export default function VendorProfilePanel({ open, onClose, profile, onSaved }) {
+export default function VendorProfilePanel({ open, onClose, profile }) {
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [draft, setDraft] = useState(() => toDraft(profile))
+  const [openRequest, setOpenRequest] = useState(null)
+  const [sentNotice, setSentNotice] = useState(false)
 
   useEffect(() => {
     if (!open) return
     setDraft(toDraft(profile))
     setEditing(false)
     setError('')
+    setSentNotice(false)
   }, [open, profile])
+
+  useEffect(() => {
+    if (!open || !profile?.vendor_id) return undefined
+    let ignore = false
+    getUpdateRequests(profile.vendor_id)
+      .then((requests) => { if (!ignore) setOpenRequest(requests.find((item) => ['update requested', 'sent for approval'].includes(item.status)) || null) })
+      .catch(() => {})
+    return () => { ignore = true }
+  }, [open, profile?.vendor_id, sentNotice])
 
   if (!open) return null
 
@@ -102,11 +115,11 @@ export default function VendorProfilePanel({ open, onClose, profile, onSaved }) 
     setError('')
     try {
       const payload = isRegisteredMsme(draft) ? draft : { ...draft, udyam_number: '' }
-      const updated = await updateVendorProfile(profile.vendor_id, payload)
-      onSaved(updated)
+      await createUpdateRequest(profile.vendor_id, payload)
       setEditing(false)
+      setSentNotice(true)
     } catch (saveError) {
-      setError(saveError?.message || 'Unable to update vendor details.')
+      setError(saveError?.message || 'Unable to send the update request.')
     } finally {
       setSaving(false)
     }
@@ -137,6 +150,15 @@ export default function VendorProfilePanel({ open, onClose, profile, onSaved }) 
         ) : (
           <form className="flex min-h-0 flex-1 flex-col" onSubmit={save}>
             <div className="flex-1 space-y-4 overflow-y-auto text-[13px] px-5 py-4 sm:px-6">
+              {(openRequest || sentNotice) && (
+                <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900">
+                  <Clock size={15} className="mt-0.5 shrink-0" />
+                  <p>
+                    {sentNotice ? 'Your update request has been sent for review. ' : 'You have an update request awaiting approval. '}
+                    Your current details stay active until it is approved. <Link to="/update-requests" onClick={onClose} className="font-bold underline">Track request</Link>
+                  </p>
+                </div>
+              )}
               {error && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>}
 
               {editing && <p className="text-xs text-slate-500">Fields marked with <span className="text-red-600">*</span> are required.</p>}
@@ -147,10 +169,10 @@ export default function VendorProfilePanel({ open, onClose, profile, onSaved }) 
                     <Icon size={15} className="text-brand-600" /> {title}
                   </h3>
                   <div className="mt-2.5 grid gap-x-3 gap-y-2.5 sm:grid-cols-2">
-                    {fields.filter(([key]) => key !== 'udyam_number' || isRegisteredMsme(editing ? draft : profile)).map(([key, label, type = 'text', options]) => (
+                    {fields.filter(([key]) => key !== 'udyam_number' || isRegisteredMsme(editing ? draft : profile)).map(([key, label, type = 'text', options, readOnly = false]) => (
                       <div key={key} className={wideKeys.has(key) ? 'sm:col-span-2' : ''}>
-                        <label htmlFor={`profile-${key}`} className="block text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-500">{label}{editing && (requiredKeys.has(key) || key === 'udyam_number') && <span className="ml-1 text-red-600" aria-hidden="true">*</span>}</label>
-                        {editing && type === 'select' ? (
+                        <label htmlFor={`profile-${key}`} className="block text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-500">{label}{editing && !readOnly && (requiredKeys.has(key) || key === 'udyam_number') && <span className="ml-1 text-red-600" aria-hidden="true">*</span>}</label>
+                        {editing && !readOnly && type === 'select' ? (
                           <select
                             id={`profile-${key}`}
                             className="app-field mt-1 min-h-8 rounded-md px-2.5 py-1 leading-5"
@@ -161,7 +183,7 @@ export default function VendorProfilePanel({ open, onClose, profile, onSaved }) 
                             <option value="">Select an option</option>
                             {(draft[key] && !options.includes(draft[key]) ? [draft[key], ...options] : options).map((option) => <option key={option} value={option}>{option}</option>)}
                           </select>
-                        ) : editing ? (
+                        ) : editing && !readOnly ? (
                           <input
                             id={`profile-${key}`}
                             type={type}
@@ -184,10 +206,10 @@ export default function VendorProfilePanel({ open, onClose, profile, onSaved }) 
               {editing ? (
                 <>
                   <Button className="min-h-9! px-4! py-1.5!" type="button" variant="secondary" onClick={cancelEdit} disabled={saving}>Cancel</Button>
-                  <Button className="min-h-9! px-4! py-1.5!" type="submit" disabled={saving}>{saving ? <><Loader /> Saving...</> : <><Check size={17} /> Save changes</>}</Button>
+                  <Button className="min-h-9! px-4! py-1.5!" type="submit" disabled={saving}>{saving ? <><Loader /> Sending...</> : <><Send size={16} /> Send request</>}</Button>
                 </>
               ) : (
-                <Button className="min-h-9! px-4! py-1.5!" type="button" onClick={() => setEditing(true)}><Pencil size={16} /> Edit details</Button>
+                <Button className="min-h-9! px-4! py-1.5!" type="button" onClick={() => setEditing(true)} disabled={Boolean(openRequest) || sentNotice} title={openRequest || sentNotice ? 'An update request is already awaiting approval' : undefined}><Pencil size={16} /> Edit details</Button>
               )}
             </footer>
           </form>
