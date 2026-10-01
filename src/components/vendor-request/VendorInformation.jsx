@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Building2, Search } from 'lucide-react'
 import Input from '../common/Input'
 import Select from '../common/Select'
@@ -12,7 +12,7 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const PAN_PATTERN = /^[A-Z]{5}[0-9]{4}[A-Z]$/
 const GSTIN_PATTERN = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/
 
-export default function VendorInformation({ register, errors, watch, setValue, setError, clearErrors, lockedFields = [], onGstLookupSuccess, onEmailTakenChange, onPanTakenChange, onEmailCheckingChange, onPanCheckingChange }) {
+export default function VendorInformation({ register, errors, watch, setValue, setError, clearErrors, lockedFields = [], onGstLookupSuccess, onEmailTakenChange, onPanTakenChange, onEmailCheckingChange, onPanCheckingChange, takenRef }) {
   const msmeStatus = watch('msmeStatus')
   const vendorEmail = watch('vendorEmail')?.trim() || ''
   const pan = watch('pan')?.trim().toUpperCase() || ''
@@ -79,7 +79,16 @@ export default function VendorInformation({ register, errors, watch, setValue, s
     clearErrors,
     onTakenChange: onEmailTakenChange,
     onCheckingChange: onEmailCheckingChange,
+    takenRef,
   })
+
+  // The legal name and address were filled from one GSTIN. Change or remove that GSTIN and they no longer
+  // belong to it, so they are cleared (to be filled again by a lookup of the new GSTIN).
+  useEffect(() => {
+    if (!gstLookup.gstin || gstLookup.gstin === gstin) return
+    ;['vendorLegalName', 'registeredAddress1', 'registeredState', 'registeredPostalCode'].forEach((name) => setValue(name, '', { shouldDirty: true }))
+    setGstLookup({ loading: false, gstin: '', message: '' })
+  }, [gstin, gstLookup.gstin, setValue])
 
   const checkingPan = useDuplicateCheck({
     value: pan,
@@ -91,6 +100,7 @@ export default function VendorInformation({ register, errors, watch, setValue, s
     clearErrors,
     onTakenChange: onPanTakenChange,
     onCheckingChange: onPanCheckingChange,
+    takenRef,
   })
 
   return (

@@ -8,10 +8,10 @@ import { getVendorProfile } from '../../api/vendorApi'
 
 const NAV_ITEMS = [
   { to: '/invoices', label: 'Invoices', icon: FileText },
-  { to: '/update-requests', label: 'Update Requests', icon: FilePenLine },
+  { to: '/update-requests', label: 'Change Requests', icon: FilePenLine },
 ]
 
-export default function AppShell({ breadcrumb, children, backTo }) {
+export default function AppShell({ breadcrumb, children, backTo, onBack }) {
   const { logout, user, profile, updateProfile } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
@@ -92,7 +92,7 @@ export default function AppShell({ breadcrumb, children, backTo }) {
                 {NAV_ITEMS.map(({ to, label, icon: Icon }) => {
                   const active = location.pathname === to
                   return (
-                    <Link key={to} to={to} title={label} aria-label={label} aria-current={active ? 'page' : undefined} className={`flex items-center gap-3 rounded-lg px-2.5 py-2.5 text-[13px] transition ${active ? 'bg-brand-50 text-brand-700' : 'text-slate-600 hover:bg-slate-50 hover:text-navy-900'}`}>
+                    <Link key={to} to={to} title={label} aria-label={label} aria-current={active ? 'page' : undefined} className={`flex w-10 items-center gap-3 overflow-hidden rounded-lg px-[11px] py-2.5 text-[13px] transition-[width,background-color,color] group-hover:w-full group-focus-within:w-full ${active ? 'bg-brand-50 text-brand-700' : 'text-slate-600 hover:bg-slate-50 hover:text-navy-900'}`}>
                       <Icon size={18} className="shrink-0" />
                       <span className={`whitespace-nowrap opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 ${active ? 'font-bold' : 'font-medium'}`}>{label}</span>
                     </Link>
@@ -113,19 +113,30 @@ export default function AppShell({ breadcrumb, children, backTo }) {
       <main className={`app-shell__main relative flex-1 min-w-0 py-2 sm:py-3 ${backTo ? 'guest-shell__main flex min-h-0 flex-col pt-3 sm:pt-4' : ''}`}>
         {backTo && (
           <div className="no-print mx-auto mb-2 w-full shrink-0 px-3 sm:px-4">
-            <Link
-              to={backTo}
-              className="inline-flex min-h-10 items-center gap-2 rounded-lg px-2 text-sm font-bold text-slate-600 transition hover:bg-white hover:text-navy-900"
-            >
-              <ArrowLeft size={18} /> Back
-            </Link>
+            {onBack ? (
+              // The page needs to confirm first (e.g. unsaved progress would be lost), so it decides when to leave.
+              <button
+                type="button"
+                onClick={onBack}
+                className="inline-flex min-h-10 items-center gap-2 rounded-lg px-2 text-sm font-bold text-slate-600 transition hover:bg-white hover:text-navy-900"
+              >
+                <ArrowLeft size={18} /> Back
+              </button>
+            ) : (
+              <Link
+                to={backTo}
+                className="inline-flex min-h-10 items-center gap-2 rounded-lg px-2 text-sm font-bold text-slate-600 transition hover:bg-white hover:text-navy-900"
+              >
+                <ArrowLeft size={18} /> Back
+              </Link>
+            )}
           </div>
         )}
         {children}
       </main>
         </div>
       </div>
-      <VendorProfilePanel open={profileOpen} onClose={() => setProfileOpen(false)} profile={profile} />
+      <VendorProfilePanel open={profileOpen} onClose={() => setProfileOpen(false)} profile={profile} onProfileRefresh={updateProfile} />
     </div>
   )
 }

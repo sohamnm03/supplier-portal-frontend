@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 // result back into react-hook-form as a manual error, plus a plain boolean
 // for callers (like a wizard's "Continue" button) that need to block on it
 // synchronously rather than re-reading form errors.
-export default function useDuplicateCheck({ value, isValid, checkFn, message, fieldName, setError, clearErrors, onTakenChange, onCheckingChange }) {
+export default function useDuplicateCheck({ value, isValid, checkFn, message, fieldName, setError, clearErrors, onTakenChange, onCheckingChange, onChecked, takenRef }) {
   const [checking, setChecking] = useState(false)
   const token = useRef(0)
 
@@ -15,6 +15,8 @@ export default function useDuplicateCheck({ value, isValid, checkFn, message, fi
   useEffect(() => {
     const current = ++token.current
     onTakenChange?.(false)
+    // null = the latest value has not been checked yet; true / false once the server has answered.
+    onChecked?.(null)
     if (!value || !isValid) {
       setChecking(false)
       return undefined
@@ -26,6 +28,11 @@ export default function useDuplicateCheck({ value, isValid, checkFn, message, fi
       try {
         const exists = await checkFn(value)
         if (current !== token.current) return
+        onChecked?.(Boolean(exists))
+        if (takenRef) {
+          takenRef.current[fieldName] = exists ? String(value).trim() : ''
+          takenRef.current[`${fieldName}Message`] = ''
+        }
         if (exists) {
           setError(fieldName, { type: 'manual', message })
           onTakenChange?.(true)
@@ -34,7 +41,13 @@ export default function useDuplicateCheck({ value, isValid, checkFn, message, fi
         }
       } catch {
         if (current !== token.current) return
+        // If the check itself fails the value stays blocked (and the message stays) until it can be verified.
+        if (takenRef) {
+          takenRef.current[fieldName] = String(value).trim()
+          takenRef.current[`${fieldName}Message`] = 'Could not verify availability. Please try again.'
+        }
         setError(fieldName, { type: 'manual', message: 'Could not verify availability. Please try again.' })
+        onChecked?.(true)
         onTakenChange?.(true)
       } finally {
         if (current === token.current) setChecking(false)
@@ -45,7 +58,7 @@ export default function useDuplicateCheck({ value, isValid, checkFn, message, fi
       clearTimeout(timer)
       if (token.current === current) token.current += 1
     }
-  }, [value, isValid, checkFn, message, fieldName, setError, clearErrors, onTakenChange])
+  }, [value, isValid, checkFn, message, fieldName, setError, clearErrors, onTakenChange, onChecked, takenRef])
 
   return checking
 }

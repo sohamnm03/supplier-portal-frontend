@@ -58,6 +58,9 @@ export async function getVendorProfile(vendorId) {
   return Array.isArray(body) ? body[0] : body
 }
 
+// Fired after a request is sent so any open Change Requests screen refreshes immediately.
+export const UPDATE_REQUESTS_CHANGED_EVENT = 'update-requests-changed'
+
 export async function createUpdateRequest(vendorId, details) {
   const response = await fetch(`${API_BASE_URL}/vendors/update-requests`, {
     method: 'POST',
@@ -70,6 +73,7 @@ export async function createUpdateRequest(vendorId, details) {
     throw new Error(body?.error || 'Unable to send the update request.')
   }
 
+  window.dispatchEvent(new Event(UPDATE_REQUESTS_CHANGED_EVENT))
   return body
 }
 

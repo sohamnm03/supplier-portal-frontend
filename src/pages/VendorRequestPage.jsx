@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, ArrowRight, BadgeCheck, CheckCircle2, FileCheck2, Landmark, Save, ShieldCheck, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, BadgeCheck, FileCheck2, Landmark, ShieldCheck, X } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import PageContainer from '../components/layout/PageContainer'
 import Button from '../components/common/Button'
@@ -14,7 +14,7 @@ import BankDetails from '../components/vendor-request/BankDetails'
 import ReviewRequest from '../components/vendor-request/ReviewRequest'
 import useVendorRequest from '../hooks/useVendorRequest'
 import { FORM_STEPS, STEP_FIELDS } from '../utils/constants'
-import { clearDraft, saveDraft } from '../utils/storage'
+import { clearDraft } from '../utils/storage'
 import { checkEmailExists, checkPanExists, createVendor } from '../api/vendorApi'
 
 const trustPoints = [
@@ -31,8 +31,6 @@ export default function VendorRequestPage() {
   const { register, watch, setValue, setError, clearErrors, trigger, reset, handleSubmit, formState: { errors } } = form
   const [step, setStep] = useState(1)
   const [attempted, setAttempted] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
   const [cancelOpen, setCancelOpen] = useState(false)
@@ -69,6 +67,7 @@ export default function VendorRequestPage() {
 
         setEmailTaken(emailExists)
         setPanTaken(panExists)
+        form.takenRef.current = { ...form.takenRef.current, pan: panExists ? normalizedPan : '', vendorEmail: emailExists ? normalizedEmail : '' }
         if (emailExists) setError('vendorEmail', { type: 'manual', message: 'This email already exists.' })
         else clearErrors('vendorEmail')
         if (panExists) setError('pan', { type: 'manual', message: 'This PAN already exists.' })
@@ -90,16 +89,6 @@ export default function VendorRequestPage() {
     setAttempted(false)
     setStep((current) => Math.max(current - 1, 1))
     window.scrollTo({ top: 0, behavior: 'smooth' })
-  }
-
-  const handleSave = () => {
-    setSaving(true)
-    saveDraft(values)
-    setTimeout(() => {
-      setSaving(false)
-      setSaved(true)
-      setTimeout(() => setSaved(false), 2500)
-    }, 450)
   }
 
   const submitRequest = handleSubmit(async (data) => {
@@ -130,7 +119,7 @@ export default function VendorRequestPage() {
   }
 
   const renderStep = () => {
-    const props = { register, errors, watch, setValue, setError, clearErrors, lockedFields: gstLockedFields }
+    const props = { register, errors, watch, setValue, setError, clearErrors, lockedFields: gstLockedFields, takenRef: form.takenRef }
     if (step === 1) {
       return (
         <VendorInformation
@@ -160,7 +149,7 @@ export default function VendorRequestPage() {
   }
 
   return (
-    <AppShell backTo="/">
+    <AppShell backTo="/" onBack={() => setCancelOpen(true)}>
       <PageContainer wide className="vendor-workspace h-full">
         <section className="vendor-workspace__card grid h-full min-h-0 overflow-hidden rounded-xl border border-blue-200/80 bg-white shadow-[0_12px_36px_rgba(40,83,130,0.08)] lg:grid-cols-[240px_minmax(0,1fr)] xl:grid-cols-[260px_minmax(0,1fr)]">
           <aside className="hidden min-h-0 flex-col overflow-hidden border-r border-blue-100 bg-[#eef7ff] p-5 lg:flex xl:p-6">
@@ -226,10 +215,6 @@ export default function VendorRequestPage() {
                   <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div className="flex flex-col-reverse gap-2 sm:flex-row">
                       <Button type="button" variant="ghost" onClick={() => setCancelOpen(true)}><X size={17} /> Cancel</Button>
-                      <Button type="button" variant="secondary" onClick={handleSave} disabled={saving}>
-                        {saving ? <Loader /> : saved ? <CheckCircle2 size={17} /> : <Save size={17} />}
-                        {saving ? 'Saving…' : saved ? 'Draft saved' : 'Save draft'}
-                      </Button>
                     </div>
                     <div className="flex flex-col-reverse gap-2 sm:flex-row">
                       {step > 1 && <Button type="button" variant="secondary" onClick={previousStep}><ArrowLeft size={17} /> Back</Button>}
