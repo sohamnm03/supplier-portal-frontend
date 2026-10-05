@@ -15,7 +15,8 @@ import ReviewRequest from '../components/vendor-request/ReviewRequest'
 import useVendorRequest from '../hooks/useVendorRequest'
 import { FORM_STEPS, STEP_FIELDS } from '../utils/constants'
 import { clearDraft } from '../utils/storage'
-import { checkEmailExists, checkPanExists, createVendor } from '../api/vendorApi'
+import SupportingDocuments from '../components/vendor-request/SupportingDocuments'
+import { checkEmailExists, checkPanExists, createVendor, uploadVendorDocuments } from '../api/vendorApi'
 
 const trustPoints = [
   { icon: ShieldCheck, label: 'Secure verification' },
@@ -40,10 +41,21 @@ export default function VendorRequestPage() {
   const [checkingPan, setCheckingPan] = useState(false)
   const [checkingDuplicates, setCheckingDuplicates] = useState(false)
   const [gstLockedFields, setGstLockedFields] = useState(GST_MANAGED_FIELDS)
+  // Supporting documents as { [typeKey]: File[] }. Files can't go in the form state or a saved draft, so they live here.
+  const [documents, setDocuments] = useState({})
   const values = watch()
   const currentFields = STEP_FIELDS[step - 1] || []
   const errorCount = currentFields.filter((name) => errors[name]).length
   const declarationsComplete = values.accurateDeclaration && values.termsDeclaration
+
+  const setDocumentFiles = (type, files) => {
+    setDocuments((current) => {
+      const next = { ...current }
+      if (files.length > 0) next[type] = files
+      else delete next[type]
+      return next
+    })
+  }
 
   const lockGstFields = (fields) => {
     setGstLockedFields((current) => [...new Set([...current, ...fields])])
@@ -97,10 +109,21 @@ export default function VendorRequestPage() {
     setSubmitError('')
     try {
       const vendor = await createVendor(data)
+      // The request now exists, so a failed upload must not fail the submission (a retry would hit the duplicate
+      // PAN / email check). It is reported on the confirmation page instead.
+      let documentsFailed = false
+      if (Object.keys(documents).length > 0) {
+        try {
+          await uploadVendorDocuments(vendor.vendor_id, documents)
+        } catch {
+          documentsFailed = true
+        }
+      }
       clearDraft()
       navigate('/request-success', {
         state: {
           requestId: `VR-${vendor.vendor_id}`,
+          documentsFailed,
           vendorName: data.vendorLegalName,
           submissionDate: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
         },
@@ -114,6 +137,7 @@ export default function VendorRequestPage() {
   const discard = () => {
     clearDraft()
     reset()
+    setDocuments({})
     setCancelOpen(false)
     navigate('/')
   }
@@ -133,10 +157,18 @@ export default function VendorRequestPage() {
       )
     }
     if (step === 2) return <AddressAndTaxDetails {...props} />
-    if (step === 3) return <BankDetails {...props} />
+    if (step === 3) {
+      return (
+        <div className="space-y-3">
+          <BankDetails {...props} />
+          <SupportingDocuments documents={documents} onChange={setDocumentFiles} />
+        </div>
+      )
+    }
     return (
       <ReviewRequest
         values={values}
+        documents={documents}
         register={register}
         setValue={setValue}
         errors={errors}

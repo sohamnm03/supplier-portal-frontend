@@ -1,8 +1,23 @@
 import Input from '../common/Input'
 import Select from '../common/Select'
 import { indianStates } from '../../data/mockData'
+import usePincodeAutofill, { pincodeStatusHint } from '../../hooks/usePincodeAutofill'
 
-export default function AddressFields({ prefix, register, errors, lockedFields = [] }) {
+export default function AddressFields({ prefix, register, errors, watch, setValue, lockedFields = [] }) {
+  const cityName = `${prefix}City`
+  const districtName = `${prefix}District`
+  const postalName = `${prefix}PostalCode`
+
+  // City and District are filled in from the PIN code, but stay editable.
+  const pincodeStatus = usePincodeAutofill({
+    pincode: String(watch(postalName) ?? '').trim(),
+    getCurrent: () => ({ city: watch(cityName), district: watch(districtName) }),
+    apply: ({ city, district }) => {
+      if (city) setValue(cityName, city, { shouldDirty: true, shouldValidate: true })
+      if (district) setValue(districtName, district, { shouldDirty: true, shouldValidate: true })
+    },
+  })
+
   return (
     <div className="form-grid">
       <Input
@@ -17,16 +32,16 @@ export default function AddressFields({ prefix, register, errors, lockedFields =
       />
       <Input
         label="City"
-        name={`${prefix}City`}
+        name={cityName}
         register={register}
-        error={errors[`${prefix}City`]}
+        error={errors[cityName]}
         required
       />
       <Input
         label="District / County"
-        name={`${prefix}District`}
+        name={districtName}
         register={register}
-        error={errors[`${prefix}District`]}
+        error={errors[districtName]}
         required
       />
       <Select
@@ -40,12 +55,12 @@ export default function AddressFields({ prefix, register, errors, lockedFields =
       />
       <Input
         label="Postal / PIN code"
-        name={`${prefix}PostalCode`}
+        name={postalName}
         register={register}
-        error={errors[`${prefix}PostalCode`]}
+        error={errors[postalName]}
         inputMode="numeric"
-        hint={lockedFields.includes(`${prefix}PostalCode`) ? 'Filled automatically from GSTIN lookup' : undefined}
-        locked={lockedFields.includes(`${prefix}PostalCode`)}
+        hint={pincodeStatusHint[pincodeStatus] || (lockedFields.includes(postalName) ? 'Filled automatically from GSTIN lookup' : 'City and district fill in from the PIN code')}
+        locked={lockedFields.includes(postalName)}
         required
       />
     </div>

@@ -3,7 +3,11 @@ import { AlertCircle, Send, X } from 'lucide-react'
 import { createUpdateRequest } from '../../api/vendorApi'
 import Button from '../common/Button'
 import Loader from '../common/Loader'
-import { LOCKED_KEYS, isRegisteredMsme, requiredKeys, sameValue, sections, toDraft } from './profileFields'
+import PhoneField from '../common/PhoneField'
+import { joinPhone, phoneRuleFor, splitPhone } from '../../data/countryCodes'
+import usePincodeAutofill from '../../hooks/usePincodeAutofill'
+import { aadhaarDigits, maskAadhaarInput } from '../../utils/formatters'
+import { LOCKED_KEYS, displayProfileValue, isRegisteredMsme, requiredKeys, sameValue, sections, toDraft, toUpdatePayload } from './profileFields'
 
 const fieldBox = 'mt-1 h-8 min-h-8 w-full rounded-md px-2.5 py-1 text-[13px] leading-5'
 const wideKeys = new Set(['vendor_legal_name', 'street', 'account_holder_name'])
@@ -25,11 +29,17 @@ export default function EditDetailsModal({ open, profile, onClose, onSent }) {
   const [draft, setDraft] = useState(() => toDraft(profile))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [fieldErrors, setFieldErrors] = useState({})
+  // The phone number is kept in the draft as one value ("+919998832823"); the code is also held on its own so
+  // choosing a code before typing a number is not forgotten.
+  const [phoneCode, setPhoneCode] = useState(() => splitPhone(profile?.contact_no).code)
 
   useEffect(() => {
     if (!open) return undefined
     setDraft(toDraft(profile))
+    setPhoneCode(splitPhone(profile?.contact_no).code)
     setError('')
+    setFieldErrors({})
     const onKey = (event) => { if (event.key === 'Escape' && !saving) onClose() }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
@@ -38,13 +48,39 @@ export default function EditDetailsModal({ open, profile, onClose, onSent }) {
   }, [open])
 
   const changedKeys = useMemo(
-    () => new Set(Object.keys(draft).filter((key) => !sameValue(draft[key], profile?.[key]))),
+    () => new Set(Object.keys(draft).filter((key) => !sameValue(draft[key], profile?.[key], key))),
     [draft, profile],
   )
 
+  // City and District follow the PIN code. A PIN that is already on record is locked, so this only matters
+  // for a profile that never had one.
+  usePincodeAutofill({
+    pincode: String(draft.postal_code ?? '').trim(),
+    enabled: open && !(LOCKED_KEYS.has('postal_code') && String(profile?.postal_code ?? '').trim() !== ''),
+    getCurrent: () => ({ city: draft.city, district: draft.district }),
+    apply: (fill) => setDraft((current) => ({ ...current, ...fill })),
+  })
+
   if (!open || !profile) return null
 
-  const setValue = (key, value) => setDraft((current) => ({ ...current, [key]: value }))
+  const phoneNumber = draft.contact_no.startsWith(phoneCode) ? draft.contact_no.slice(phoneCode.length) : ''
+
+  const setValue = (key, value) => {
+    setDraft((current) => ({ ...current, [key]: value }))
+    setFieldErrors((current) => (current[key] ? { ...current, [key]: '' } : current))
+  }
+  const setPhone = (code, number) => {
+    setPhoneCode(code)
+    setValue('contact_no', joinPhone(code, number))
+  }
+
+  // Only a phone or Aadhaar the vendor actually changed is checked, so an old record is never blocked by itself.
+  const validate = () => {
+    const problems = {}
+    if (changedKeys.has('contact_no') && !phoneRuleFor(phoneCode).pattern.test(phoneNumber)) problems.contact_no = phoneRuleFor(phoneCode).message
+    if (changedKeys.has('aadhaar_no') && aadhaarDigits(draft.aadhaar_no) && !/^[2-9]\d{11}$/.test(aadhaarDigits(draft.aadhaar_no))) problems.aadhaar_no = 'Enter a valid 12-digit Aadhaar number'
+    return problems
+  }
 
   const submit = async (event) => {
     event.preventDefault()
@@ -52,10 +88,16 @@ export default function EditDetailsModal({ open, profile, onClose, onSent }) {
       setError('Change at least one detail to send a request.')
       return
     }
+    const problems = validate()
+    if (Object.keys(problems).length > 0) {
+      setFieldErrors(problems)
+      setError(Object.values(problems)[0])
+      return
+    }
     setSaving(true)
     setError('')
     try {
-      const payload = isRegisteredMsme(draft) ? draft : { ...draft, udyam_number: '' }
+      const payload = toUpdatePayload(isRegisteredMsme(draft) ? draft : { ...draft, udyam_number: '' }, profile)
       await createUpdateRequest(profile.vendor_id, payload)
       onSent()
     } catch (saveError) {
@@ -99,8 +141,8 @@ export default function EditDetailsModal({ open, profile, onClose, onSent }) {
                       return (
                         <div key={key} className={wideKeys.has(key) ? 'col-span-2' : ''} data-changed={changed || undefined}>
                           <p className={labelClass}>{label}</p>
-                          <p title={profile[key] || ''} className="mt-1 flex h-8 items-center truncate rounded-md border border-[#dce6f1] bg-[#f6f8fb] px-2.5 text-[13px] font-semibold leading-5 text-navy-900">
-                            <span className="truncate">{profile[key] || '—'}</span>
+                          <p title={displayProfileValue(key, profile[key])} className="mt-1 flex h-8 items-center truncate rounded-md border border-[#dce6f1] bg-[#f6f8fb] px-2.5 text-[13px] font-semibold leading-5 text-navy-900">
+                            <span className="truncate">{displayProfileValue(key, profile[key]) || '—'}</span>
                           </p>
                         </div>
                       )
@@ -123,6 +165,31 @@ export default function EditDetailsModal({ open, profile, onClose, onSent }) {
                           </label>
                           {locked ? (
                             <input id={`edit-${key}`} className={`app-field app-field--locked ${fieldBox}`} value={String(profile[key])} readOnly disabled aria-readonly="true" title="This detail can't be changed" />
+                          ) : key === 'contact_no' ? (
+                            <PhoneField
+                              id={`edit-${key}`}
+                              codeId={`edit-${key}-code`}
+                              code={phoneCode}
+                              onCodeChange={(code) => setPhone(code, phoneNumber.slice(0, phoneRuleFor(code).max))}
+                              inputProps={{ value: phoneNumber, onChange: (event) => setPhone(phoneCode, event.target.value) }}
+                              onNumberReplace={(digits) => setPhone(phoneCode, digits)}
+                              invalid={Boolean(fieldErrors[key])}
+                              required={required}
+                              controlClassName={`${fieldBox}${highlight}`}
+                            />
+                          ) : key === 'aadhaar_no' ? (
+                            <input
+                              id={`edit-${key}`}
+                              className={`app-field tabular-nums tracking-wider ${fieldBox}${highlight}`}
+                              type="text"
+                              inputMode="numeric"
+                              autoComplete="off"
+                              placeholder="XXXX XXXX XXXX"
+                              maxLength={14}
+                              aria-invalid={Boolean(fieldErrors[key])}
+                              value={draft[key]}
+                              onChange={(event) => setValue(key, maskAadhaarInput(event.target))}
+                            />
                           ) : type === 'select' ? (
                             <select id={`edit-${key}`} className={`app-field ${fieldBox}${highlight}`} value={draft[key]} onChange={(event) => setValue(key, event.target.value)} required={required}>
                               <option value="">Select an option</option>

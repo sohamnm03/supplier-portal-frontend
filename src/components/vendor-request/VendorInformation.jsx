@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react'
 import { Building2, Search } from 'lucide-react'
 import Input from '../common/Input'
+import AadhaarInput from '../common/AadhaarInput'
+import PhoneInput from '../common/PhoneInput'
 import Select from '../common/Select'
+import SelectMenu from '../common/SelectMenu'
 import FormSection from './FormSection'
 import Loader from '../common/Loader'
-import { currencies } from '../../data/mockData'
+import { currencies, relationshipManagers } from '../../data/mockData'
 import { checkEmailExists, checkPanExists, verifyGstin } from '../../api/vendorApi'
 import useDuplicateCheck from '../../hooks/useDuplicateCheck'
 
@@ -143,21 +146,22 @@ export default function VendorInformation({ register, errors, watch, setValue, s
           hint={checkingPan ? 'Checking availability…' : 'Format: ABCDE1234F'}
           required
         />
-        <Input
+        <AadhaarInput
           label="Aadhaar number"
           name="aadhaar"
           register={register}
           error={errors.aadhaar}
           hint="12-digit Aadhaar number, if applicable"
         />
-        <Input
+        <PhoneInput
           label="Phone number"
           name="vendorPhone"
-          type="tel"
-          inputMode="tel"
+          codeName="vendorPhoneCode"
           register={register}
+          watch={watch}
+          setValue={setValue}
           error={errors.vendorPhone}
-          hint="10-digit mobile number"
+          hint={watch('vendorPhoneCode') === '+91' ? '10-digit mobile number' : 'Number without the country code'}
           required
         />
         <Input
@@ -207,6 +211,16 @@ export default function VendorInformation({ register, errors, watch, setValue, s
           error={errors.msmeStatus}
           options={['Registered', 'Not registered', 'Not applicable']}
           required
+        />
+        <SelectMenu
+          label="Assigned RM"
+          name="assignedRm"
+          register={register}
+          watch={watch}
+          setValue={setValue}
+          error={errors.assignedRm}
+          options={relationshipManagers}
+          placeholder="Select RM"
         />
         {msmeStatus === 'Registered' && (
           <Input

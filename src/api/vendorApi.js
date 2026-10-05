@@ -1,3 +1,6 @@
+import { joinPhone } from '../data/countryCodes'
+import { aadhaarDigits } from '../utils/formatters'
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
 // Deployed shared-services API (GSTIN verification, invoice preview links; email and OCR are called by the backend).
 const SHARED_SERVICES_URL = (import.meta.env.VITE_SHARED_SERVICES_URL || 'https://fs-quad-shared.azurewebsites.net').replace(/\/+$/, '')
@@ -13,6 +16,39 @@ export async function verifyGstin(gstin) {
     throw new Error(body?.message || body?.error || 'GSTIN could not be verified.')
   }
 
+  return body
+}
+
+// Public India Post directory. Only the 6-digit PIN code is sent. A PIN code resolves to one district, which
+// is used for both City and District / County (the directory has no separate city), and both stay editable.
+const PINCODE_API_URL = 'https://api.postalpincode.in/pincode'
+const pincodeCache = new Map()
+
+// Resolves to { city, district }, or null when the PIN code is not in the directory. Throws if the lookup
+// itself fails (offline, timeout), so the caller can tell "unknown PIN" from "could not check".
+export async function lookupPincode(pincode) {
+  if (pincodeCache.has(pincode)) return pincodeCache.get(pincode)
+
+  const response = await fetch(`${PINCODE_API_URL}/${pincode}`, { signal: AbortSignal.timeout(8000) })
+  if (!response.ok) throw new Error('PIN code lookup failed.')
+  const body = await response.json().catch(() => null)
+  const entry = Array.isArray(body) ? body[0] : null
+  if (!entry) throw new Error('PIN code lookup failed.')
+
+  const district = entry.Status === 'Success' ? String(entry.PostOffice?.find((office) => office?.District)?.District || '').trim() : ''
+  const result = district ? { city: district, district } : null
+  pincodeCache.set(pincode, result)
+  return result
+}
+
+// documents is { [typeKey]: File[] }; each type goes up under its own form field name.
+export async function uploadVendorDocuments(vendorId, documents) {
+  const formData = new FormData()
+  Object.entries(documents).forEach(([type, files]) => files.forEach((file) => formData.append(type, file)))
+
+  const response = await fetch(`${API_BASE_URL}/vendors/${vendorId}/documents`, { method: 'POST', body: formData })
+  const body = await response.json().catch(() => null)
+  if (!response.ok) throw new Error(body?.error || 'Unable to upload the supporting documents.')
   return body
 }
 
@@ -148,7 +184,7 @@ function toVendorPayload(data) {
   return {
     name: data.vendorLegalName,
     vendor_legal_name: data.vendorLegalName,
-    contact_no: data.vendorPhone,
+    contact_no: joinPhone(data.vendorPhoneCode, data.vendorPhone),
     email: data.vendorEmail,
     vendor_type: data.vendorType,
     year_established: data.yearEstablished || null,
@@ -156,9 +192,10 @@ function toVendorPayload(data) {
     registration_number: data.registrationNumber,
     msme_status: data.msmeStatus,
     udyam_number: data.udyamNumber || null,
+    assigned_rm: data.assignedRm || null,
     gstin: data.gstin || null,
     pan: data.pan,
-    aadhaar_no: data.aadhaar || null,
+    aadhaar_no: aadhaarDigits(data.aadhaar) || null,
     cin: data.cin || null,
     street: data.registeredAddress1,
     city: data.registeredCity,

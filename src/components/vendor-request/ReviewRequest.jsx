@@ -3,6 +3,8 @@ import { ArrowLeft, Edit3, Send } from 'lucide-react'
 import Button from '../common/Button'
 import Checkbox from '../common/Checkbox'
 import Loader from '../common/Loader'
+import { joinPhone } from '../../data/countryCodes'
+import { documentTypes } from '../../data/documentTypes'
 import { displayValue, maskAccountNumber } from '../../utils/formatters'
 import TermsPolicyModal from './TermsPolicyModal'
 
@@ -15,7 +17,7 @@ const sections = [
       ['GSTIN', 'gstin'], ['Legal name', 'vendorLegalName'], ['PAN / Tax ID', 'pan'], ['Aadhaar number', 'aadhaar'],
       ['Phone number', 'vendorPhone'], ['Email address', 'vendorEmail'], ['Vendor type', 'vendorType'],
       ['Currency', 'currency'],
-      ['Registration no.', 'registrationNumber'], ['MSME status', 'msmeStatus'], ['Udyam no.', 'udyamNumber'],
+      ['Registration no.', 'registrationNumber'], ['MSME status', 'msmeStatus'], ['Assigned RM', 'assignedRm'], ['Udyam no.', 'udyamNumber'],
     ],
   },
   {
@@ -36,7 +38,7 @@ const sections = [
   },
 ]
 
-export default function ReviewRequest({ values, register, setValue, errors, onEdit, onBack, submitting, declarationsComplete }) {
+export default function ReviewRequest({ values, documents = {}, register, setValue, errors, onEdit, onBack, submitting, declarationsComplete }) {
   const [termsOpen, setTermsOpen] = useState(false)
 
   const handleTermsClick = (event) => {
@@ -70,13 +72,35 @@ export default function ReviewRequest({ values, register, setValue, errors, onEd
                 <div key={key} className={key.includes('Address') ? 'sm:col-span-2' : ''}>
                   <dt className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">{label}</dt>
                   <dd className="mt-0.5 break-words text-xs font-semibold text-slate-800">
-                    {masked ? maskAccountNumber(values[key]) : displayValue(values[key])}
+                    {masked ? maskAccountNumber(values[key]) : displayValue(key === 'vendorPhone' ? joinPhone(values.vendorPhoneCode, values.vendorPhone) : values[key])}
                   </dd>
                 </div>
               ))}
             </dl>
           </section>
         ))}
+        <section className="section-card overflow-hidden xl:col-span-2">
+          <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/70 px-4 py-2.5">
+            <h3 className="text-sm font-extrabold text-navy-900">Supporting documents</h3>
+            <button
+              type="button"
+              onClick={() => onEdit(3)}
+              className="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-2.5 text-xs font-bold text-brand-600 transition hover:bg-brand-50 hover:text-brand-700"
+            >
+              <Edit3 size={14} /> Edit
+            </button>
+          </div>
+          <dl className="grid grid-cols-1 gap-x-5 gap-y-3 p-4 sm:grid-cols-2 xl:grid-cols-3">
+            {documentTypes.map(({ key, label }) => (
+              <div key={key}>
+                <dt className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">{label}</dt>
+                <dd className="mt-0.5 break-words text-xs font-semibold text-slate-800">
+                  {documents[key]?.length ? documents[key].map((file) => file.name).join(', ') : '—'}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </section>
       </div>
 
       <section className="section-card p-4">

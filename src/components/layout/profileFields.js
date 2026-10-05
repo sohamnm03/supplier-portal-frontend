@@ -1,5 +1,7 @@
 import { BadgeCheck, Building2, Landmark, MapPin } from 'lucide-react'
 import { currencies, indianStates } from '../../data/mockData'
+import { normalizePhone } from '../../data/countryCodes'
+import { aadhaarDigits, formatAadhaar } from '../../utils/formatters'
 
 // The vendor profile's fields, shared by the read-only profile panel and the Edit details popup.
 // Each field is [key, label, input type, options (for selects)].
@@ -71,6 +73,27 @@ export const LOCKED_KEYS = new Set(['gstin', 'pan', 'vendor_legal_name', 'street
 
 export const isRegisteredMsme = (data) => data?.msme_status === 'Registered'
 
-export const toDraft = (profile) => Object.fromEntries(editableKeys.map((key) => [key, profile?.[key] ?? '']))
+// Phone and Aadhaar are compared in their canonical form (+919998832823 / 999988887777), so a number stored the
+// older way - without the country code, or with spaces - is not reported as changed just because it is shown tidied.
+const comparable = { contact_no: normalizePhone, aadhaar_no: aadhaarDigits }
+export const sameValue = (a, b, key) => {
+  const normalise = comparable[key] || ((value) => String(value ?? '').trim())
+  return normalise(a) === normalise(b)
+}
 
-export const sameValue = (a, b) => String(a ?? '').trim() === String(b ?? '').trim()
+// What the vendor sees: Aadhaar in groups of four, phone with its country code.
+export const displayProfileValue = (key, value) => {
+  if (key === 'aadhaar_no') return formatAadhaar(value)
+  if (key === 'contact_no') return normalizePhone(value)
+  return value ?? ''
+}
+
+export const toDraft = (profile) => Object.fromEntries(editableKeys.map((key) => [key, displayProfileValue(key, profile?.[key])]))
+
+// The request sent for approval. Phone is "+<code><number>" and Aadhaar is digits only; a value the vendor did
+// not touch goes back exactly as stored so it is not reported as a change.
+export const toUpdatePayload = (draft, profile) => ({
+  ...draft,
+  contact_no: sameValue(draft.contact_no, profile?.contact_no, 'contact_no') ? (profile?.contact_no ?? '') : draft.contact_no,
+  aadhaar_no: sameValue(draft.aadhaar_no, profile?.aadhaar_no, 'aadhaar_no') ? (profile?.aadhaar_no ?? '') : aadhaarDigits(draft.aadhaar_no),
+})

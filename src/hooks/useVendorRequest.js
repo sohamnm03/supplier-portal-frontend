@@ -2,9 +2,10 @@ import { useRef } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { vendorRequestSchema } from '../schemas/vendorRequestSchema'
+import { DEFAULT_COUNTRY_CODE } from '../data/countryCodes'
 
 const defaults = {
-  vendorLegalName: '', vendorPhone: '', vendorEmail: '', vendorType: '', yearEstablished: '', currency: 'INR', registrationNumber: '', msmeStatus: 'Not registered', udyamNumber: '',
+  vendorLegalName: '', vendorPhoneCode: DEFAULT_COUNTRY_CODE, vendorPhone: '', vendorEmail: '', vendorType: '', yearEstablished: '', currency: 'INR', registrationNumber: '', msmeStatus: 'Not registered', assignedRm: '', udyamNumber: '',
   registeredAddress1: '', registeredCity: '', registeredDistrict: '', registeredState: '', registeredPostalCode: '',
   pan: '', gstin: '', aadhaar: '', cin: '',
   accountHolderName: '', bankName: '', branchName: '', accountNumber: '', ifsc: '',

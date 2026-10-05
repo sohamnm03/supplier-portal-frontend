@@ -5,7 +5,7 @@ import { getUpdateRequests, getVendorProfile, UPDATE_REQUESTS_CHANGED_EVENT } fr
 import Button from '../common/Button'
 import Loader from '../common/Loader'
 import EditDetailsModal from './EditDetailsModal'
-import { isRegisteredMsme, sections } from './profileFields'
+import { displayProfileValue, isRegisteredMsme, sections } from './profileFields'
 
 const POLL_INTERVAL_MS = 10000
 const IN_REVIEW = ['update requested', 'sent for approval']
@@ -122,7 +122,7 @@ export default function VendorProfilePanel({ open, onClose, profile, onProfileRe
                       {fields.filter(([key]) => key !== 'udyam_number' || isRegisteredMsme(profile)).map(([key, label]) => (
                         <div key={key} className={wideKeys.has(key) ? 'sm:col-span-2' : ''}>
                           <p className="block text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-500">{label}</p>
-                          <p className="mt-0.5 min-h-5 break-words text-[13px] font-semibold text-navy-900">{profile[key] || '—'}</p>
+                          <p className="mt-0.5 min-h-5 break-words text-[13px] font-semibold text-navy-900">{displayProfileValue(key, profile[key]) || '—'}</p>
                         </div>
                       ))}
                     </div>

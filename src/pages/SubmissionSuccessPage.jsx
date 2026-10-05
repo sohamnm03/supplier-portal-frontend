@@ -60,6 +60,12 @@ export default function SubmissionSuccessPage() {
               ))}
             </dl>
 
+            {state.documentsFailed && (
+              <div role="alert" className="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
+                <strong>Your supporting documents were not uploaded.</strong> Your request was received, but the attached files could not be saved. Please send them to support, quoting {state.requestId}.
+              </div>
+            )}
+
             <div className="mt-6 rounded-lg border border-blue-200 bg-brand-50 p-4 text-sm leading-6 text-slate-700">
               <strong className="text-brand-700">What happens next?</strong> Procurement will review the vendor profile, followed by tax and banking verification. You’ll be contacted if more information is needed.
             </div>
