@@ -9,6 +9,7 @@ import {
   FileText,
   Inbox,
   LoaderCircle,
+  RotateCcw,
   ScanText,
   Search,
   ShieldCheck,
@@ -17,6 +18,9 @@ import {
   X,
 } from 'lucide-react'
 import { getInvoicePreviewUrl } from '../../api/vendorApi'
+import { statusDetails } from '../../utils/invoiceStatus'
+import SortableHeaderCell from '../../utils/SortableHeaderCell'
+import { nextSortState, sortRows } from '../../utils/tableSort'
 
 const PAGE_SIZE = 5
 
@@ -66,14 +70,6 @@ const totalValue = (invoice) => {
   return values.length ? values.reduce((sum, value) => sum + value, 0) : null
 }
 
-function statusDetails(invoice) {
-  const status = String(invoice.extractionStatus ?? invoice.status ?? '').toLowerCase()
-  if (status === 'failed' || status === 'rejected') return { label: status === 'rejected' ? 'Rejected' : 'Failed', tone: 'bg-red-50 text-red-700', filter: 'failed' }
-  if (['queued', 'extracting', 'processing', 'pending', 'pending approval'].includes(status)) return { label: 'Processing', tone: 'bg-amber-50 text-amber-700', filter: 'processing' }
-  if (invoice.source === 'local' || status === 'ready') return { label: 'Ready', tone: 'bg-blue-50 text-blue-700', filter: 'ready' }
-  return { label: 'Extracted', tone: 'bg-emerald-50 text-emerald-700', filter: 'extracted' }
-}
-
 // Newest uploads first; fall back to the (numeric) id when timestamps are equal or missing.
 const byNewestUpload = (a, b) => {
   const timeDiff = (new Date(b.uploadedAt).getTime() || 0) - (new Date(a.uploadedAt).getTime() || 0)
@@ -86,10 +82,12 @@ const uploaderType = (invoice) => (invoice.uploaded_by_type === 'maker' ? 'maker
 const SOURCE_TABS = [
   ['all', 'All Invoices'],
   ['vendor', 'Uploaded by Me'],
-  ['maker', 'Uploaded by Maker'],
+  ['maker', 'Uploaded by Relationship Manager'],
 ]
 
-const EMPTY_ADVANCED = { dateFrom: '', dateTo: '', minAmount: '', maxAmount: '' }
+const uploadedByLabel = (invoice, uploadedBy) => (uploaderType(invoice) === 'maker' ? 'Relationship Manager' : pick(invoice, ['uploaded_by', 'uploadedBy'], uploadedBy || ''))
+
+const EMPTY_ADVANCED ={ dateFrom: '', dateTo: '', minAmount: '', maxAmount: '' }
 
 const isoDate = (value) => {
   if (!value) return ''
@@ -119,6 +117,7 @@ export default function InvoiceList({ invoices, onRemove, onExtract, isLoading =
   const [filterOpen, setFilterOpen] = useState(false)
   const filterRef = useRef(null)
   const [page, setPage] = useState(1)
+  const [sort, setSort] = useState(null)
   const [preview, setPreview] = useState(null)
   const extractingInvoice = invoices.find((invoice) => invoice.extractionStatus === 'extracting')
 
@@ -130,17 +129,42 @@ export default function InvoiceList({ invoices, onRemove, onExtract, isLoading =
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase()
-    return [...invoices].sort(byNewestUpload).filter((invoice) => {
+    const matching = [...invoices].sort(byNewestUpload).filter((invoice) => {
       const matchesSource = sourceFilter === 'all' || uploaderType(invoice) === sourceFilter
       const matchesStatus = filter === 'all' || statusDetails(invoice).filter === filter
       const text = `${vendorName(invoice)} ${vendorGstin(invoice)} ${invoiceNumber(invoice)} ${invoice.name}`.toLowerCase()
       return matchesSource && matchesStatus && matchesAdvanced(invoice, advanced) && (!term || text.includes(term))
     })
-  }, [advanced, filter, invoices, search, sourceFilter])
+    // Sort the full filtered set before pagination; raw values (not the formatted display text) are compared.
+    return sortRows(matching, sort, (invoice, key) => {
+      switch (key) {
+        case 'vendor': return vendorName(invoice)
+        case 'uploadedBy': return uploadedByLabel(invoice, uploadedBy)
+        case 'invoiceNo': return invoiceNumber(invoice)
+        case 'invoiceDate': return isoDate(pick(invoice, ['invoice_date']))
+        case 'dueDate': return isoDate(pick(invoice, ['due_date']))
+        case 'paymentTerm': return pick(invoice, ['payment_term', 'payment_terms'])
+        case 'amount': return numberValue(totalValue(invoice))
+        case 'status': return statusDetails(invoice).label
+        default: return ''
+      }
+    })
+  }, [advanced, filter, invoices, search, sort, sourceFilter, uploadedBy])
 
   const activeAdvancedCount = Object.values(advanced).filter((value) => value !== '').length
+  // Status/source tabs are views, not filters: they neither enable nor get cleared by Reset.
+  const hasCriteria = Boolean(search.trim()) || activeAdvancedCount > 0 || sort !== null
+  const resetFilters = () => {
+    setSort(null)
+    setAdvanced(EMPTY_ADVANCED)
+    setSearch('')
+    setPage(1)
+  }
+  const sortHeader = (key, label, className, align) => (
+    <SortableHeaderCell label={label} className={className} align={align} active={sort?.key === key} direction={sort?.direction} onSort={() => setSort((current) => nextSortState(current, key))} />
+  )
 
-  useEffect(() => setPage(1), [filter, search, sourceFilter, advanced])
+  useEffect(() => setPage(1), [filter, search, sourceFilter, advanced, sort])
 
   // After an upload, jump to "Uploaded by Me" so the new invoice is visible right away.
   useEffect(() => {
@@ -251,7 +275,7 @@ export default function InvoiceList({ invoices, onRemove, onExtract, isLoading =
             <span className="sr-only">Search invoices</span>
             <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by vendor, invoice no. or id..." className="h-8 w-full rounded-full border border-[#d5e1ed] bg-white pl-9 pr-3 text-xs text-[#29415f] outline-none transition placeholder:text-[#64809e] focus:border-[#1769e8] focus:ring-2 focus:ring-blue-100" />
           </label>
-          <div className="flex items-center gap-2">
+          <div className="flex h-8 items-center gap-2">
             <span className="rounded-md border border-[#bfd2e8] bg-white px-2.5 py-1.5 text-[10px] font-bold text-[#29466a]">{filtered.length} total</span>
             <div ref={filterRef} className="relative text-xs">
               <button type="button" title="Filter invoices" aria-label="Filter invoices" aria-expanded={filterOpen} onClick={() => setFilterOpen((open) => !open)} className={`relative grid size-8 place-items-center rounded-md border text-[#1769e8] transition ${filterOpen || activeAdvancedCount ? 'border-[#1769e8] bg-blue-50' : 'border-[#bfd2e8] bg-white hover:bg-blue-50'}`}>
@@ -275,6 +299,12 @@ export default function InvoiceList({ invoices, onRemove, onExtract, isLoading =
                 </div>
               )}
             </div>
+            {hasCriteria && (
+              <button type="button" onClick={resetFilters} title="Reset search, filters and sorting" className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border border-[#bfd2e8] bg-white px-2.5 py-[5px] text-[#29466a] transition hover:bg-blue-50">
+                <RotateCcw size={12} />
+                <span className="text-[11px] font-semibold">Reset</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -290,14 +320,14 @@ export default function InvoiceList({ invoices, onRemove, onExtract, isLoading =
               <table className="w-full min-w-[1280px] border-collapse text-left">
                 <thead className="bg-[#f8fbff] text-[9px] font-extrabold uppercase tracking-[0.04em] text-[#617995]">
                   <tr>
-                    <th className="px-5 py-3">Vendor</th>
-                    <th className="px-4 py-3">Uploaded By</th>
-                    <th className="px-4 py-3">Invoice No.</th>
-                    <th className="px-4 py-3">Invoice Date</th>
-                    <th className="px-4 py-3">Due Date</th>
-                    <th className="px-4 py-3">Payment Term</th>
-                    <th className="px-4 py-3 text-right">Amount</th>
-                    <th className="px-4 py-3">Status</th>
+                    {sortHeader('vendor', 'Vendor', 'px-5 py-3')}
+                    {sortHeader('uploadedBy', 'Uploaded By', 'px-4 py-3')}
+                    {sortHeader('invoiceNo', 'Invoice No.', 'px-4 py-3')}
+                    {sortHeader('invoiceDate', 'Invoice Date', 'px-4 py-3')}
+                    {sortHeader('dueDate', 'Due Date', 'px-4 py-3')}
+                    {sortHeader('paymentTerm', 'Payment Term', 'px-4 py-3')}
+                    {sortHeader('amount', 'Amount', 'px-4 py-3 text-right', 'right')}
+                    {sortHeader('status', 'Status', 'px-4 py-3')}
                     <th className="px-5 py-3 text-center">Actions</th>
                   </tr>
                 </thead>
@@ -308,15 +338,15 @@ export default function InvoiceList({ invoices, onRemove, onExtract, isLoading =
                     return (
                       <tr key={invoice.id} className="transition hover:bg-blue-50/35">
                         <td className="px-5 py-3 align-middle">
-                          <p className="max-w-64 truncate text-xs font-extrabold text-[#102a4c]">{vendorName(invoice)}</p>
+                          <p className="max-w-64 truncate text-xs font-bold text-[#3d5a80]">{vendorName(invoice)}</p>
                           {vendorGstin(invoice) && (
-                            <p className="mt-1 flex items-center gap-1 text-[9px] font-medium tracking-[0.04em] text-[#1769e8]">
+                            <p className="mt-1 flex items-center gap-1 text-[9px] font-medium tracking-[0.04em] text-[#4a7ab5]">
                               GST: {vendorGstin(invoice)}
                               {vendorGstinVerified(invoice) && <ShieldCheck size={11} className="text-emerald-600" />}
                             </p>
                           )}
                         </td>
-                        <td className="max-w-40 truncate px-4 py-3 text-xs text-[#102a4c]">{uploaderType(invoice) === 'maker' ? 'Maker (on your behalf)' : pick(invoice, ['uploaded_by', 'uploadedBy'], uploadedBy || '')}</td>
+                        <td className="max-w-40 truncate px-4 py-3 text-xs text-[#102a4c]">{uploadedByLabel(invoice, uploadedBy)}</td>
                         <td className="px-4 py-3 text-xs text-[#102a4c]">{display(invoiceNumber(invoice))}</td>
                         <td className="whitespace-nowrap px-4 py-3 text-xs text-[#102a4c]">{dateValue(pick(invoice, ['invoice_date']))}</td>
                         <td className="whitespace-nowrap px-4 py-3 text-xs text-[#102a4c]">{dateValue(pick(invoice, ['due_date']))}</td>
