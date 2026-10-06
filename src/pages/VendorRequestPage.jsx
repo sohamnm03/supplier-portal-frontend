@@ -13,6 +13,7 @@ import AddressAndTaxDetails from '../components/vendor-request/AddressAndTaxDeta
 import BankDetails from '../components/vendor-request/BankDetails'
 import ReviewRequest from '../components/vendor-request/ReviewRequest'
 import useVendorRequest from '../hooks/useVendorRequest'
+import useEmailVerification from '../hooks/useEmailVerification'
 import { FORM_STEPS, STEP_FIELDS } from '../utils/constants'
 import { clearDraft } from '../utils/storage'
 import SupportingDocuments from '../components/vendor-request/SupportingDocuments'
@@ -44,6 +45,8 @@ export default function VendorRequestPage() {
   // Supporting documents as { [typeKey]: File[] }. Files can't go in the form state or a saved draft, so they live here.
   const [documents, setDocuments] = useState({})
   const values = watch()
+  // Lives here (not in step 1) so the verified email survives moving between steps.
+  const emailVerification = useEmailVerification(values.vendorEmail)
   const currentFields = STEP_FIELDS[step - 1] || []
   const errorCount = currentFields.filter((name) => errors[name]).length
   const declarationsComplete = values.accurateDeclaration && values.termsDeclaration
@@ -68,6 +71,10 @@ export default function VendorRequestPage() {
     if (!valid) return
 
     if (step === 1) {
+      if (!emailVerification.verified) {
+        setError('vendorEmail', { type: 'manual', message: 'Verify your email address to continue.' })
+        return
+      }
       setCheckingDuplicates(true)
       try {
         const normalizedEmail = values.vendorEmail.trim().toLowerCase()
@@ -105,10 +112,15 @@ export default function VendorRequestPage() {
 
   const submitRequest = handleSubmit(async (data) => {
     if (!declarationsComplete) return
+    if (!emailVerification.verified) {
+      setSubmitError('Verify your email address before submitting.')
+      setStep(1)
+      return
+    }
     setSubmitting(true)
     setSubmitError('')
     try {
-      const vendor = await createVendor(data)
+      const vendor = await createVendor(data, emailVerification.verificationId)
       // The request now exists, so a failed upload must not fail the submission (a retry would hit the duplicate
       // PAN / email check). It is reported on the confirmation page instead.
       let documentsFailed = false
@@ -148,6 +160,8 @@ export default function VendorRequestPage() {
       return (
         <VendorInformation
           {...props}
+          emailVerification={emailVerification}
+          emailTaken={emailTaken}
           onEmailTakenChange={setEmailTaken}
           onPanTakenChange={setPanTaken}
           onEmailCheckingChange={setCheckingEmail}
@@ -253,7 +267,7 @@ export default function VendorRequestPage() {
                       <Button
                         type="button"
                         onClick={nextStep}
-                        disabled={checkingDuplicates || checkingEmail || checkingPan || emailTaken || panTaken}
+                        disabled={checkingDuplicates || checkingEmail || checkingPan || emailTaken || panTaken || (step === 1 && !emailVerification.verified)}
                       >
                         {checkingDuplicates || checkingEmail || checkingPan ? <><Loader /> Checking...</> : <>{step === 3 ? 'Review request' : 'Continue'} <ArrowRight size={17} /></>}
                       </Button>

@@ -233,11 +233,50 @@ export async function checkPanExists(pan) {
   return checkExists('check-pan', { pan: pan.trim().toUpperCase() }, 'Failed to verify PAN')
 }
 
-export async function createVendor(formData) {
+// Email verification goes through our backend, which relays to the shared service. Failures carry
+// `status`, `body` (the service's JSON) and, for a 429, `retryAfter` seconds.
+async function emailVerificationRequest(path, options, fallbackMessage) {
+  let response
+  try {
+    response = await fetch(`${API_BASE_URL}/vendors/email-verification${path}`, options)
+  } catch {
+    throw new Error(fallbackMessage)
+  }
+
+  const body = await response.json().catch(() => null)
+  if (!response.ok) {
+    const error = new Error(body?.message || body?.error || fallbackMessage)
+    error.status = response.status
+    error.body = body
+    error.retryAfter = Number(body?.retry_after ?? response.headers.get('Retry-After')) || 0
+    throw error
+  }
+  return body
+}
+
+const jsonPost = (payload) => ({
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(payload),
+})
+
+export function sendEmailVerification(email, recipientName) {
+  return emailVerificationRequest('/send', jsonPost({ email: email.trim().toLowerCase(), recipient_name: recipientName || undefined }), 'Unable to send the verification email. Please try again.')
+}
+
+export function verifyEmailOtp(verificationId, otp) {
+  return emailVerificationRequest('/verify-otp', jsonPost({ verification_id: verificationId, otp }), 'Unable to verify the code. Please try again.')
+}
+
+export function getEmailVerificationStatus(verificationId) {
+  return emailVerificationRequest(`/${encodeURIComponent(verificationId)}/status`, undefined, 'Unable to check the verification status.')
+}
+
+export async function createVendor(formData, verificationId) {
   const response = await fetch(`${API_BASE_URL}/vendors`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(toVendorPayload(formData)),
+    body: JSON.stringify({ ...toVendorPayload(formData), verification_id: verificationId }),
   })
 
   const body = await response.json().catch(() => null)

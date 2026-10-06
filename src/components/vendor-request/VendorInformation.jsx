@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Building2, Search } from 'lucide-react'
+import { BadgeCheck, Building2, MailCheck, Search } from 'lucide-react'
 import Input from '../common/Input'
+import EmailVerificationPanel from './EmailVerificationPanel'
 import AadhaarInput from '../common/AadhaarInput'
 import PhoneInput from '../common/PhoneInput'
 import Select from '../common/Select'
@@ -15,7 +16,7 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const PAN_PATTERN = /^[A-Z]{5}[0-9]{4}[A-Z]$/
 const GSTIN_PATTERN = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/
 
-export default function VendorInformation({ register, errors, watch, setValue, setError, clearErrors, lockedFields = [], onGstLookupSuccess, onEmailTakenChange, onPanTakenChange, onEmailCheckingChange, onPanCheckingChange, takenRef }) {
+export default function VendorInformation({ register, errors, watch, setValue, setError, clearErrors, lockedFields = [], emailVerification, emailTaken, onGstLookupSuccess, onEmailTakenChange, onPanTakenChange, onEmailCheckingChange, onPanCheckingChange, takenRef }) {
   const msmeStatus = watch('msmeStatus')
   const vendorEmail = watch('vendorEmail')?.trim() || ''
   const pan = watch('pan')?.trim().toUpperCase() || ''
@@ -84,6 +85,9 @@ export default function VendorInformation({ register, errors, watch, setValue, s
     onCheckingChange: onEmailCheckingChange,
     takenRef,
   })
+
+  const canVerifyEmail = EMAIL_PATTERN.test(vendorEmail) && !errors.vendorEmail && !emailTaken && !checkingEmail
+    && !emailVerification.busy && !emailVerification.pending
 
   // The legal name and address were filled from one GSTIN. Change or remove that GSTIN and they no longer
   // belong to it, so they are cleared (to be filled again by a lookup of the new GSTIN).
@@ -170,9 +174,36 @@ export default function VendorInformation({ register, errors, watch, setValue, s
           type="email"
           register={register}
           error={errors.vendorEmail}
-          hint={checkingEmail ? 'Checking availability…' : undefined}
+          hint={checkingEmail ? 'Checking availability…' : emailVerification.verified ? 'Email verified.' : 'Verify your email address to continue.'}
+          locked={emailVerification.verified}
           required
+          action={emailVerification.verified ? (
+            <>
+              <span className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-bold text-emerald-700">
+                <BadgeCheck size={14} /> Verified
+              </span>
+              <button
+                type="button"
+                onClick={emailVerification.reset}
+                className="inline-flex min-h-10 shrink-0 items-center rounded-lg px-2 text-xs font-bold text-brand-700 transition hover:bg-brand-50"
+              >
+                Change
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={emailVerification.send}
+              disabled={!canVerifyEmail}
+              className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg border border-brand-100 bg-brand-50 px-3 text-xs font-bold text-brand-700 transition hover:border-brand-500 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+              aria-label="Send a verification code to this email address"
+            >
+              {emailVerification.busy && !emailVerification.pending ? <Loader /> : <MailCheck size={14} />}
+              Verify
+            </button>
+          )}
         />
+        <EmailVerificationPanel email={vendorEmail} verification={emailVerification} />
         <Select
           label="Vendor type"
           name="vendorType"
