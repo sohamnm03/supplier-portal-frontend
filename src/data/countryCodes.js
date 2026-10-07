@@ -40,6 +40,7 @@ export const PHONE_RULES = {
 }
 export const DEFAULT_PHONE_RULE = { max: 14, pattern: /^\d{4,14}$/, message: 'Enter a valid phone number (4-14 digits)' }
 export const phoneRuleFor = (code) => PHONE_RULES[code] || DEFAULT_PHONE_RULE
+export const isValidPhone = (code, number) => phoneRuleFor(code).pattern.test(String(number ?? '').replace(/\s/g, ''))
 
 // Phone numbers are stored as the code and number run together: "+919998832823".
 export const joinPhone = (code, number) => (number ? `${code || DEFAULT_COUNTRY_CODE}${number}` : '')

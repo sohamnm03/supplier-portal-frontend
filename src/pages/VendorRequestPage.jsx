@@ -8,6 +8,7 @@ import FormError from '../components/common/FormError'
 import Loader from '../components/common/Loader'
 import Modal from '../components/common/Modal'
 import FormProgress from '../components/vendor-request/FormProgress'
+import ContactDetails from '../components/vendor-request/ContactDetails'
 import VendorInformation from '../components/vendor-request/VendorInformation'
 import AddressAndTaxDetails from '../components/vendor-request/AddressAndTaxDetails'
 import BankDetails from '../components/vendor-request/BankDetails'
@@ -15,6 +16,7 @@ import ReviewRequest from '../components/vendor-request/ReviewRequest'
 import useVendorRequest from '../hooks/useVendorRequest'
 import useEmailVerification from '../hooks/useEmailVerification'
 import { FORM_STEPS, STEP_FIELDS } from '../utils/constants'
+import { isValidPhone } from '../data/countryCodes'
 import { clearDraft } from '../utils/storage'
 import SupportingDocuments from '../components/vendor-request/SupportingDocuments'
 import { checkEmailExists, checkPanExists, createVendor, uploadVendorDocuments } from '../api/vendorApi'
@@ -47,6 +49,8 @@ export default function VendorRequestPage() {
   const values = watch()
   // Lives here (not in step 1) so the verified email survives moving between steps.
   const emailVerification = useEmailVerification(values.vendorEmail)
+  // The vendor information stays locked until the contact details are done: a verified email and a valid phone number.
+  const contactReady = emailVerification.verified && isValidPhone(values.vendorPhoneCode, values.vendorPhone)
   const currentFields = STEP_FIELDS[step - 1] || []
   const errorCount = currentFields.filter((name) => errors[name]).length
   const declarationsComplete = values.accurateDeclaration && values.termsDeclaration
@@ -158,16 +162,22 @@ export default function VendorRequestPage() {
     const props = { register, errors, watch, setValue, setError, clearErrors, lockedFields: gstLockedFields, takenRef: form.takenRef }
     if (step === 1) {
       return (
-        <VendorInformation
-          {...props}
-          emailVerification={emailVerification}
-          emailTaken={emailTaken}
-          onEmailTakenChange={setEmailTaken}
-          onPanTakenChange={setPanTaken}
-          onEmailCheckingChange={setCheckingEmail}
-          onPanCheckingChange={setCheckingPan}
-          onGstLookupSuccess={lockGstFields}
-        />
+        <div className="space-y-3">
+          <ContactDetails
+            {...props}
+            emailVerification={emailVerification}
+            emailTaken={emailTaken}
+            onEmailTakenChange={setEmailTaken}
+            onEmailCheckingChange={setCheckingEmail}
+          />
+          <VendorInformation
+            {...props}
+            disabled={!contactReady}
+            onPanTakenChange={setPanTaken}
+            onPanCheckingChange={setCheckingPan}
+            onGstLookupSuccess={lockGstFields}
+          />
+        </div>
       )
     }
     if (step === 2) return <AddressAndTaxDetails {...props} />

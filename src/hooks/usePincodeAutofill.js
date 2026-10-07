@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { lookupPincode } from '../api/vendorApi'
 
-const PIN_PATTERN = /^[1-9]\d{5}$/
+export const PIN_PATTERN =/^[1-9]\d{5}$/
 
 // Looks up a complete 6-digit PIN code and hands City and District to `apply({ city?, district? })`.
 // A field is only filled when it is empty or still holds what the previous lookup put there, so anything the

@@ -1,31 +1,44 @@
-import { useEffect, useState } from 'react'
-import { BadgeCheck, Building2, MailCheck, Search } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { BadgeCheck, Building2, Lock, Search } from 'lucide-react'
 import Input from '../common/Input'
-import EmailVerificationPanel from './EmailVerificationPanel'
 import AadhaarInput from '../common/AadhaarInput'
-import PhoneInput from '../common/PhoneInput'
-import Select from '../common/Select'
 import SelectMenu from '../common/SelectMenu'
 import FormSection from './FormSection'
 import Loader from '../common/Loader'
 import { currencies, relationshipManagers } from '../../data/mockData'
-import { checkEmailExists, checkPanExists, verifyGstin } from '../../api/vendorApi'
+import { checkPanExists, lookupPincode, verifyGstin } from '../../api/vendorApi'
 import useDuplicateCheck from '../../hooks/useDuplicateCheck'
+import { PIN_PATTERN } from '../../hooks/usePincodeAutofill'
 
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const PAN_PATTERN = /^[A-Z]{5}[0-9]{4}[A-Z]$/
 const GSTIN_PATTERN = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/
 
-export default function VendorInformation({ register, errors, watch, setValue, setError, clearErrors, lockedFields = [], emailVerification, emailTaken, onGstLookupSuccess, onEmailTakenChange, onPanTakenChange, onEmailCheckingChange, onPanCheckingChange, takenRef }) {
+export default function VendorInformation({ register, errors, watch, setValue, setError, clearErrors, lockedFields = [], disabled = false, onGstLookupSuccess, onPanTakenChange, onPanCheckingChange, takenRef }) {
   const msmeStatus = watch('msmeStatus')
-  const vendorEmail = watch('vendorEmail')?.trim() || ''
   const pan = watch('pan')?.trim().toUpperCase() || ''
   const gstin = watch('gstin')?.trim().toUpperCase() || ''
   const [gstLookup, setGstLookup] = useState({ loading: false, gstin: '', message: '' })
+  // gstLookup.gstin is only set by a successful lookup, and cleared again if the GSTIN is changed.
+  const gstVerified = Boolean(gstLookup.gstin) && gstLookup.gstin === gstin
+
+  // City and District come from the GSTIN's PIN code, right after the lookup rather than once the vendor reaches the
+  // address step. They stay editable. A failed PIN lookup is silent: the address step retries it and tells the vendor.
+  const cityLookupToken = useRef(0)
+  const fillCityAndDistrict = async (pincode, token) => {
+    if (!PIN_PATTERN.test(pincode)) return
+    try {
+      const place = await lookupPincode(pincode)
+      if (!place || token !== cityLookupToken.current) return
+      setValue('registeredCity', place.city, { shouldDirty: true, shouldValidate: true })
+      setValue('registeredDistrict', place.district, { shouldDirty: true, shouldValidate: true })
+    } catch {
+      // Nothing to do: see above.
+    }
+  }
 
   const handleGstLookup = async () => {
     if (!GSTIN_PATTERN.test(gstin)) {
-      setError('gstin', { type: 'manual', message: 'Enter a valid 15-character GSTIN before lookup.' })
+      setError('gstin', { type: 'manual', message: 'Enter a valid 15-character GSTIN before verifying.' })
       return
     }
 
@@ -66,34 +79,20 @@ export default function VendorInformation({ register, errors, watch, setValue, s
       clearErrors(['gstin', 'vendorLegalName', 'registeredAddress1', 'registeredState', 'registeredPostalCode'])
       onGstLookupSuccess?.(appliedFields)
       setGstLookup({ loading: false, gstin: verifiedGstin, message: result.message || 'GSTIN details applied. Verified fields are locked.' })
+      fillCityAndDistrict(postalCode, ++cityLookupToken.current)
     } catch (lookupError) {
-      const message = lookupError?.message || 'GSTIN lookup failed. Please try again.'
+      const message = lookupError?.message || 'GSTIN verification failed. Please try again.'
       setError('gstin', { type: 'manual', message })
       setGstLookup({ loading: false, gstin: '', message: '' })
     }
   }
 
-  const checkingEmail = useDuplicateCheck({
-    value: vendorEmail,
-    isValid: EMAIL_PATTERN.test(vendorEmail),
-    checkFn: checkEmailExists,
-    message: 'This email already exists.',
-    fieldName: 'vendorEmail',
-    setError,
-    clearErrors,
-    onTakenChange: onEmailTakenChange,
-    onCheckingChange: onEmailCheckingChange,
-    takenRef,
-  })
-
-  const canVerifyEmail = EMAIL_PATTERN.test(vendorEmail) && !errors.vendorEmail && !emailTaken && !checkingEmail
-    && !emailVerification.busy && !emailVerification.pending
-
   // The legal name and address were filled from one GSTIN. Change or remove that GSTIN and they no longer
   // belong to it, so they are cleared (to be filled again by a lookup of the new GSTIN).
   useEffect(() => {
     if (!gstLookup.gstin || gstLookup.gstin === gstin) return
-    ;['vendorLegalName', 'registeredAddress1', 'registeredState', 'registeredPostalCode'].forEach((name) => setValue(name, '', { shouldDirty: true }))
+    cityLookupToken.current += 1 // a PIN lookup still in flight belongs to the old GSTIN
+    ;['vendorLegalName', 'registeredAddress1', 'registeredCity', 'registeredDistrict', 'registeredState', 'registeredPostalCode'].forEach((name) => setValue(name, '', { shouldDirty: true }))
     setGstLookup({ loading: false, gstin: '', message: '' })
   }, [gstin, gstLookup.gstin, setValue])
 
@@ -112,7 +111,16 @@ export default function VendorInformation({ register, errors, watch, setValue, s
 
   return (
     <FormSection icon={Building2} title="Vendor information" description="Provide the vendor’s legal and commercial profile.">
-      <div className="form-grid">
+      {disabled && (
+        <p role="status" className="mb-3 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+          <Lock size={14} className="shrink-0" />
+          Verify your email and enter a valid phone number above to fill in the vendor information.
+        </p>
+      )}
+      {/* A disabled fieldset disables every native control inside it, including the custom selects. */}
+      {/* Three columns from tablet width up, so the rows read: GSTIN + legal name / PAN, Aadhaar, registration no. /
+          type, year, currency / MSME, Udyam, relationship manager. */}
+      <fieldset disabled={disabled} className={`grid min-w-0 gap-x-3.5 gap-y-3 transition-opacity md:grid-cols-3 ${disabled ? 'opacity-50' : ''}`}>
         <Input
           label="GSTIN"
           name="gstin"
@@ -120,25 +128,30 @@ export default function VendorInformation({ register, errors, watch, setValue, s
           error={errors.gstin}
           hint={gstLookup.gstin === gstin && gstLookup.message ? gstLookup.message : '15-character GST identification number, if applicable'}
           locked={lockedFields.includes('gstin')}
-          action={(
+          action={gstVerified ? (
+            <span className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-bold text-emerald-700">
+              <BadgeCheck size={14} /> Verified
+            </span>
+          ) : (
             <button
               type="button"
               onClick={handleGstLookup}
               disabled={gstLookup.loading || !gstin}
               className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg border border-brand-100 bg-brand-50 px-3 text-xs font-bold text-brand-700 transition hover:border-brand-500 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
-              aria-label="Look up GSTIN details"
+              aria-label="Verify GSTIN"
             >
               {gstLookup.loading ? <Loader /> : <Search size={14} />}
-              Lookup
+              Verify
             </button>
           )}
         />
         <Input
+          className="md:col-span-2"
           label="Vendor legal name"
           name="vendorLegalName"
           register={register}
           error={errors.vendorLegalName}
-          hint={lockedFields.includes('vendorLegalName') ? 'Filled automatically from GSTIN lookup' : undefined}
+          hint={lockedFields.includes('vendorLegalName') ? 'Filled automatically from GSTIN verification' : undefined}
           locked={lockedFields.includes('vendorLegalName')}
           required
         />
@@ -157,57 +170,19 @@ export default function VendorInformation({ register, errors, watch, setValue, s
           error={errors.aadhaar}
           hint="12-digit Aadhaar number, if applicable"
         />
-        <PhoneInput
-          label="Phone number"
-          name="vendorPhone"
-          codeName="vendorPhoneCode"
-          register={register}
-          watch={watch}
-          setValue={setValue}
-          error={errors.vendorPhone}
-          hint={watch('vendorPhoneCode') === '+91' ? '10-digit mobile number' : 'Number without the country code'}
-          required
-        />
         <Input
-          label="Email address"
-          name="vendorEmail"
-          type="email"
+          label="Company registration number"
+          name="registrationNumber"
           register={register}
-          error={errors.vendorEmail}
-          hint={checkingEmail ? 'Checking availability…' : emailVerification.verified ? 'Email verified.' : 'Verify your email address to continue.'}
-          locked={emailVerification.verified}
+          error={errors.registrationNumber}
           required
-          action={emailVerification.verified ? (
-            <>
-              <span className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-bold text-emerald-700">
-                <BadgeCheck size={14} /> Verified
-              </span>
-              <button
-                type="button"
-                onClick={emailVerification.reset}
-                className="inline-flex min-h-10 shrink-0 items-center rounded-lg px-2 text-xs font-bold text-brand-700 transition hover:bg-brand-50"
-              >
-                Change
-              </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              onClick={emailVerification.send}
-              disabled={!canVerifyEmail}
-              className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg border border-brand-100 bg-brand-50 px-3 text-xs font-bold text-brand-700 transition hover:border-brand-500 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
-              aria-label="Send a verification code to this email address"
-            >
-              {emailVerification.busy && !emailVerification.pending ? <Loader /> : <MailCheck size={14} />}
-              Verify
-            </button>
-          )}
         />
-        <EmailVerificationPanel email={vendorEmail} verification={emailVerification} />
-        <Select
+        <SelectMenu
           label="Vendor type"
           name="vendorType"
           register={register}
+          watch={watch}
+          setValue={setValue}
           error={errors.vendorType}
           options={['Individual', 'Proprietorship', 'Partnership', 'Private limited company', 'Public limited company', 'Government entity', 'Other']}
           required
@@ -220,38 +195,25 @@ export default function VendorInformation({ register, errors, watch, setValue, s
           error={errors.yearEstablished}
           placeholder="2014"
         />
-        <Select
+        <SelectMenu
           label="Transaction currency"
           name="currency"
           register={register}
+          watch={watch}
+          setValue={setValue}
           error={errors.currency}
           options={currencies}
           required
         />
-        <Input
-          label="Company registration number"
-          name="registrationNumber"
-          register={register}
-          error={errors.registrationNumber}
-          required
-        />
-        <Select
+        <SelectMenu
           label="MSME status"
           name="msmeStatus"
           register={register}
+          watch={watch}
+          setValue={setValue}
           error={errors.msmeStatus}
           options={['Registered', 'Not registered', 'Not applicable']}
           required
-        />
-        <SelectMenu
-          label="Assigned RM"
-          name="assignedRm"
-          register={register}
-          watch={watch}
-          setValue={setValue}
-          error={errors.assignedRm}
-          options={relationshipManagers}
-          placeholder="Select RM"
         />
         {msmeStatus === 'Registered' && (
           <Input
@@ -262,7 +224,17 @@ export default function VendorInformation({ register, errors, watch, setValue, s
             required
           />
         )}
-      </div>
+        <SelectMenu
+          label="Relationship manager"
+          name="assignedRm"
+          register={register}
+          watch={watch}
+          setValue={setValue}
+          error={errors.assignedRm}
+          options={relationshipManagers}
+          placeholder="Select RM"
+        />
+      </fieldset>
     </FormSection>
   )
 }

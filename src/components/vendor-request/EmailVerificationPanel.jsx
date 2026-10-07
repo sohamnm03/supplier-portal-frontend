@@ -35,7 +35,7 @@ export default function EmailVerificationPanel({ email, verification }) {
   }
 
   return (
-    <div className="full rounded-lg border border-blue-100 bg-[#f4f9ff] px-3 py-3" aria-live="polite">
+    <div className="col-span-full rounded-lg border border-blue-100 bg-[#f4f9ff] px-3 py-3" aria-live="polite">
       {pending && (
         <>
           <p className="flex items-start gap-2 text-xs leading-5 text-slate-700">

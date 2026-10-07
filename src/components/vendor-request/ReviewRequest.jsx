@@ -17,14 +17,14 @@ const sections = [
       ['GSTIN', 'gstin'], ['Legal name', 'vendorLegalName'], ['PAN / Tax ID', 'pan'], ['Aadhaar number', 'aadhaar'],
       ['Phone number', 'vendorPhone'], ['Email address', 'vendorEmail'], ['Vendor type', 'vendorType'],
       ['Currency', 'currency'],
-      ['Registration no.', 'registrationNumber'], ['MSME status', 'msmeStatus'], ['Assigned RM', 'assignedRm'], ['Udyam no.', 'udyamNumber'],
+      ['Registration no.', 'registrationNumber'], ['MSME status', 'msmeStatus'], ['Relationship manager', 'assignedRm'], ['Udyam no.', 'udyamNumber'],
     ],
   },
   {
     title: 'Address details',
     step: 2,
     fields: [
-      ['Registered address', 'registeredAddress1'], ['City', 'registeredCity'], ['District', 'registeredDistrict'],
+      ['Address', 'registeredAddress1'], ['District', 'registeredDistrict'], ['City', 'registeredCity'],
       ['State', 'registeredState'], ['Postal code', 'registeredPostalCode'], ['CIN', 'cin'],
     ],
   },

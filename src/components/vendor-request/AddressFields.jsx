@@ -1,5 +1,5 @@
 import Input from '../common/Input'
-import Select from '../common/Select'
+import SelectMenu from '../common/SelectMenu'
 import { indianStates } from '../../data/mockData'
 import usePincodeAutofill, { pincodeStatusHint } from '../../hooks/usePincodeAutofill'
 
@@ -19,22 +19,16 @@ export default function AddressFields({ prefix, register, errors, watch, setValu
   })
 
   return (
-    <div className="form-grid">
+    // Two columns from tablet width up: the address takes the whole first row, then district + city, then state + PIN code.
+    <div className="grid gap-x-3.5 gap-y-3 md:grid-cols-2">
       <Input
-        className="wide"
-        label="Address line 1"
+        className="md:col-span-2"
+        label="Address"
         name={`${prefix}Address1`}
         register={register}
         error={errors[`${prefix}Address1`]}
-        hint={lockedFields.includes(`${prefix}Address1`) ? 'Filled automatically from GSTIN lookup' : undefined}
+        hint={lockedFields.includes(`${prefix}Address1`) ? 'Filled automatically from GSTIN verification' : undefined}
         locked={lockedFields.includes(`${prefix}Address1`)}
-        required
-      />
-      <Input
-        label="City"
-        name={cityName}
-        register={register}
-        error={errors[cityName]}
         required
       />
       <Input
@@ -44,10 +38,19 @@ export default function AddressFields({ prefix, register, errors, watch, setValu
         error={errors[districtName]}
         required
       />
-      <Select
+      <Input
+        label="City"
+        name={cityName}
+        register={register}
+        error={errors[cityName]}
+        required
+      />
+      <SelectMenu
         label="State"
         name={`${prefix}State`}
         register={register}
+        watch={watch}
+        setValue={setValue}
         error={errors[`${prefix}State`]}
         options={indianStates}
         locked={lockedFields.includes(`${prefix}State`)}
@@ -59,7 +62,7 @@ export default function AddressFields({ prefix, register, errors, watch, setValu
         register={register}
         error={errors[postalName]}
         inputMode="numeric"
-        hint={pincodeStatusHint[pincodeStatus] || (lockedFields.includes(postalName) ? 'Filled automatically from GSTIN lookup' : 'City and district fill in from the PIN code')}
+        hint={pincodeStatusHint[pincodeStatus] || (lockedFields.includes(postalName) ? 'Filled automatically from GSTIN verification' : 'City and district fill in from the PIN code')}
         locked={lockedFields.includes(postalName)}
         required
       />

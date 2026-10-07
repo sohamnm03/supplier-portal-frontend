@@ -4,7 +4,7 @@ import { phoneRuleFor } from '../data/countryCodes'
 const required = (label) => z.string().trim().min(1, `${label} is required`)
 export const vendorRequestSchema = z.object({
   vendorLegalName: required('Vendor legal name'), vendorPhoneCode: required('Country code'), vendorPhone: required('Phone number'),vendorEmail: required('Email address').email('Enter a valid email address'), vendorType: required('Vendor type'), yearEstablished: z.string().optional().refine((v) => !v || (/^\d{4}$/.test(v) && +v <= new Date().getFullYear()), 'Enter a valid year'), currency: required('Currency'), registrationNumber: required('Registration number'), msmeStatus: required('MSME status'), assignedRm: z.string().optional(), udyamNumber: z.string().optional(),
-  registeredAddress1: required('Address line 1'), registeredCity: required('City'), registeredDistrict: required('District'), registeredState: required('State'), registeredPostalCode: required('Postal code'),
+  registeredAddress1: required('Address'), registeredDistrict: required('District'), registeredCity: required('City'), registeredState: required('State'), registeredPostalCode: required('Postal code'),
   pan: required('Tax identification number'), gstin: z.string().optional(), aadhaar: z.string().optional(), cin: z.string().optional(),
   accountHolderName: required('Account holder name'), bankName: required('Bank name'), branchName: required('Branch name'), accountNumber: required('Account number').regex(/^\d{6,34}$/, 'Enter a valid 6–34 digit account number'), ifsc: required('IFSC code'),
   accurateDeclaration: z.boolean(), termsDeclaration: z.boolean(),
