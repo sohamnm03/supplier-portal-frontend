@@ -3,7 +3,7 @@ import Input from '../common/Input'
 import FormSection from './FormSection'
 import AddressFields from './AddressFields'
 
-export default function AddressAndTaxDetails({ register, errors, watch, setValue, lockedFields = [] }) {
+export default function AddressDetails({ register, errors, watch, setValue, lockedFields = [] }) {
   const vendorType = watch('vendorType')
   const showCin = ['Private limited company', 'Public limited company'].includes(vendorType)
 

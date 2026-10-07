@@ -10,7 +10,7 @@ import Modal from '../components/common/Modal'
 import FormProgress from '../components/vendor-request/FormProgress'
 import ContactDetails from '../components/vendor-request/ContactDetails'
 import VendorInformation from '../components/vendor-request/VendorInformation'
-import AddressAndTaxDetails from '../components/vendor-request/AddressAndTaxDetails'
+import AddressDetails from '../components/vendor-request/AddressDetails'
 import BankDetails from '../components/vendor-request/BankDetails'
 import ReviewRequest from '../components/vendor-request/ReviewRequest'
 import useVendorRequest from '../hooks/useVendorRequest'
@@ -44,6 +44,8 @@ export default function VendorRequestPage() {
   const [checkingPan, setCheckingPan] = useState(false)
   const [checkingDuplicates, setCheckingDuplicates] = useState(false)
   const [gstLockedFields, setGstLockedFields] = useState(GST_MANAGED_FIELDS)
+  // The GSTIN verification lives here, not in step 1, so it is still shown as verified when you come back to that step.
+  const [gstLookup, setGstLookup] = useState({ loading: false, gstin: '', message: '' })
   // Supporting documents as { [typeKey]: File[] }. Files can't go in the form state or a saved draft, so they live here.
   const [documents, setDocuments] = useState({})
   const values = watch()
@@ -173,6 +175,8 @@ export default function VendorRequestPage() {
           <VendorInformation
             {...props}
             disabled={!contactReady}
+            gstLookup={gstLookup}
+            setGstLookup={setGstLookup}
             onPanTakenChange={setPanTaken}
             onPanCheckingChange={setCheckingPan}
             onGstLookupSuccess={lockGstFields}
@@ -180,7 +184,7 @@ export default function VendorRequestPage() {
         </div>
       )
     }
-    if (step === 2) return <AddressAndTaxDetails {...props} />
+    if (step === 2) return <AddressDetails {...props} />
     if (step === 3) {
       return (
         <div className="space-y-3">

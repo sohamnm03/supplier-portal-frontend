@@ -1,6 +1,6 @@
 export const FORM_STEPS = [
   { id: 1, title: 'Vendor', longTitle: 'Vendor Information' },
-  { id: 2, title: 'Address & tax', longTitle: 'Address and Tax Details' },
+  { id: 2, title: 'Address', longTitle: 'Address Details' },
   { id: 3, title: 'Bank', longTitle: 'Bank Details' },
   { id: 4, title: 'Review', longTitle: 'Review and Submit' },
 ]

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { BadgeCheck, Building2, Lock, Search } from 'lucide-react'
 import Input from '../common/Input'
 import AadhaarInput from '../common/AadhaarInput'
@@ -13,12 +13,12 @@ import { PIN_PATTERN } from '../../hooks/usePincodeAutofill'
 const PAN_PATTERN = /^[A-Z]{5}[0-9]{4}[A-Z]$/
 const GSTIN_PATTERN = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/
 
-export default function VendorInformation({ register, errors, watch, setValue, setError, clearErrors, lockedFields = [], disabled = false, onGstLookupSuccess, onPanTakenChange, onPanCheckingChange, takenRef }) {
+export default function VendorInformation({ register, errors, watch, setValue, setError, clearErrors, lockedFields = [], disabled = false, gstLookup, setGstLookup, onGstLookupSuccess, onPanTakenChange, onPanCheckingChange, takenRef }) {
   const msmeStatus = watch('msmeStatus')
   const pan = watch('pan')?.trim().toUpperCase() || ''
   const gstin = watch('gstin')?.trim().toUpperCase() || ''
-  const [gstLookup, setGstLookup] = useState({ loading: false, gstin: '', message: '' })
-  // gstLookup.gstin is only set by a successful lookup, and cleared again if the GSTIN is changed.
+  // gstLookup (kept by the page, so it survives moving between steps) holds the GSTIN that was verified: set by a
+  // successful lookup, and cleared again if the GSTIN is changed.
   const gstVerified = Boolean(gstLookup.gstin) && gstLookup.gstin === gstin
 
   // City and District come from the GSTIN's PIN code, right after the lookup rather than once the vendor reaches the
@@ -94,7 +94,7 @@ export default function VendorInformation({ register, errors, watch, setValue, s
     cityLookupToken.current += 1 // a PIN lookup still in flight belongs to the old GSTIN
     ;['vendorLegalName', 'registeredAddress1', 'registeredCity', 'registeredDistrict', 'registeredState', 'registeredPostalCode'].forEach((name) => setValue(name, '', { shouldDirty: true }))
     setGstLookup({ loading: false, gstin: '', message: '' })
-  }, [gstin, gstLookup.gstin, setValue])
+  }, [gstin, gstLookup.gstin, setGstLookup, setValue])
 
   const checkingPan = useDuplicateCheck({
     value: pan,
