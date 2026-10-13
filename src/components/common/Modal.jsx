@@ -1,15 +1,23 @@
 import { useEffect, useRef } from 'react'
 import { AlertTriangle, X } from 'lucide-react'
 import Button from './Button'
+import Loader from './Loader'
 
-export default function Modal({ open, onClose, onConfirm }) {
+const DISCARD_TEXT = {
+  title: 'Discard this request?',
+  description: 'Everything you have entered will be lost, because your progress is not saved anywhere. This cannot be undone.',
+  cancelLabel: 'Keep editing',
+  confirmLabel: 'Discard request',
+}
+
+export default function Modal({ open, onClose, onConfirm, title = DISCARD_TEXT.title, description = DISCARD_TEXT.description, cancelLabel = DISCARD_TEXT.cancelLabel, confirmLabel = DISCARD_TEXT.confirmLabel, confirmVariant = 'danger', busy = false, busyLabel = 'Please wait…' }) {
   const cancelRef = useRef(null)
   const dialogRef = useRef(null)
   useEffect(() => {
     if (!open) return undefined
     cancelRef.current?.focus()
     const handleKey = (event) => {
-      if (event.key === 'Escape') onClose()
+      if (event.key === 'Escape' && !busy) onClose()
       if (event.key !== 'Tab') return
       const focusable = dialogRef.current?.querySelectorAll(
         'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
@@ -28,13 +36,13 @@ export default function Modal({ open, onClose, onConfirm }) {
     }
     document.addEventListener('keydown', handleKey)
     return () => document.removeEventListener('keydown', handleKey)
-  }, [open, onClose])
+  }, [open, onClose, busy])
   if (!open) return null
   return (
     <div
       className="fixed inset-0 z-50 grid place-items-center bg-navy-950/55 p-4 backdrop-blur-[2px]"
       role="presentation"
-      onMouseDown={(event) => event.target === event.currentTarget && onClose()}
+      onMouseDown={(event) => event.target === event.currentTarget && !busy && onClose()}
     >
       <div
         ref={dialogRef}
@@ -48,18 +56,18 @@ export default function Modal({ open, onClose, onConfirm }) {
           <div className="grid size-10 place-items-center rounded-full bg-red-50 text-red-600">
             <AlertTriangle size={20} />
           </div>
-          <button onClick={onClose} aria-label="Close dialog" className="interactive-icon -mr-2 !min-h-9 !min-w-9">
+          <button onClick={onClose} disabled={busy} aria-label="Close dialog" className="interactive-icon -mr-2 !min-h-9 !min-w-9">
             <X size={18} />
           </button>
         </div>
-        <h2 id="cancel-title" className="mt-4 text-lg font-bold leading-6 text-navy-900">Discard this request?</h2>
-        <p id="cancel-description" className="mt-2 text-[13px] leading-5 text-slate-600">
-          Everything you have entered will be lost, because your progress is not saved anywhere. This cannot be undone.
-        </p>
+        <h2 id="cancel-title" className="mt-4 text-lg font-bold leading-6 text-navy-900">{title}</h2>
+        <p id="cancel-description" className="mt-2 text-[13px] leading-5 text-slate-600">{description}</p>
         {/* Buttons take their text size from this wrapper (the global button reset ignores a size set on the button itself). */}
         <div className="mt-6 flex flex-col-reverse gap-2.5 text-[13px] sm:flex-row sm:justify-end">
-          <Button ref={cancelRef} variant="secondary" className="min-h-10! px-4! py-2!" onClick={onClose}>Keep editing</Button>
-          <Button variant="danger" className="min-h-10! px-4! py-2!" onClick={onConfirm}>Discard request</Button>
+          <Button ref={cancelRef} variant="secondary" className="min-h-10! px-4! py-2!" onClick={onClose} disabled={busy}>{cancelLabel}</Button>
+          <Button variant={confirmVariant} className="min-h-10! px-4! py-2!" onClick={onConfirm} disabled={busy} aria-busy={busy}>
+            {busy ? <><Loader /> {busyLabel}</> : confirmLabel}
+          </Button>
         </div>
       </div>
     </div>

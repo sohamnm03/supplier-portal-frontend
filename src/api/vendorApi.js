@@ -1,9 +1,35 @@
-import { joinPhone } from '../data/countryCodes'
-import { aadhaarDigits } from '../utils/formatters'
+import { joinPhone, splitPhone } from '../data/countryCodes'
+import { aadhaarDigits, formatAadhaar } from '../utils/formatters'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
 // Deployed shared-services API (GSTIN verification, invoice preview links; email and OCR are called by the backend).
 const SHARED_SERVICES_URL = (import.meta.env.VITE_SHARED_SERVICES_URL || 'https://fs-quad-shared.azurewebsites.net').replace(/\/+$/, '')
+
+const AUTH_KEY = 'vendor-onboarding-auth'
+// Fired when the server says the session is no longer valid, so the app can sign the vendor out.
+export const AUTH_EXPIRED_EVENT = 'vendor-auth-expired'
+
+function sessionToken() {
+  try { return JSON.parse(localStorage.getItem(AUTH_KEY))?.token || '' } catch { return '' }
+}
+
+// fetch() against our backend with the vendor's session token attached.
+async function authFetch(path, options = {}) {
+  const token = sessionToken()
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...options,
+    headers: { ...options.headers, ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+  })
+  if (response.status === 401 && token) window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT))
+  return response
+}
+
+const jsonRequest = (method, payload) => ({
+  method,
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(payload),
+})
+
 const GST_VERIFY_API_URL = `${SHARED_SERVICES_URL}/api/verify`
 const INVOICE_PREVIEW_API_URL = `${SHARED_SERVICES_URL}/api/invoice/preview-url`
 
@@ -46,18 +72,26 @@ export async function uploadVendorDocuments(vendorId, documents) {
   const formData = new FormData()
   Object.entries(documents).forEach(([type, files]) => files.forEach((file) => formData.append(type, file)))
 
-  const response = await fetch(`${API_BASE_URL}/vendors/${vendorId}/documents`, { method: 'POST', body: formData })
+  const response = await authFetch(`/vendors/${vendorId}/documents`, { method: 'POST', body: formData })
   const body = await response.json().catch(() => null)
   if (!response.ok) throw new Error(body?.error || 'Unable to upload the supporting documents.')
   return body
 }
 
+// What is already on file for the application, grouped by document type: { pan: [{ original_name, size }], ... }.
+export async function getMyDocuments() {
+  const response = await authFetch('/vendors/me/documents')
+  const body = await response.json().catch(() => null)
+  if (!response.ok) throw new Error(body?.error || 'Unable to load your documents.')
+  const grouped = {}
+  for (const document of body?.documents || []) {
+    if (document.type) (grouped[document.type] ||= []).push(document)
+  }
+  return grouped
+}
+
 export async function loginVendor(email, password) {
-  const response = await fetch(`${API_BASE_URL}/vendors/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password }),
-  })
+  const response = await fetch(`${API_BASE_URL}/vendors/login`, jsonRequest('POST', { email, password }))
 
   const body = await response.json().catch(() => null)
 
@@ -65,7 +99,9 @@ export async function loginVendor(email, password) {
     const error = new Error(
       response.status === 401
         ? 'Invalid email or password.'
-        : body?.error || body?.message || 'Unable to sign in. Please try again.',
+        : response.status === 429
+          ? 'Too many failed attempts. Please wait a few minutes and try again.'
+          : body?.error || body?.message || 'Unable to sign in. Please try again.',
     )
     error.status = response.status
     throw error
@@ -73,8 +109,8 @@ export async function loginVendor(email, password) {
 
   const session = body?.data ?? body
 
-  if (!session?.vendor_id) {
-    const error = new Error('The login response did not include a vendor ID.')
+  if (!session?.vendor_id || !session?.token) {
+    const error = new Error('The login response did not include a session.')
     error.status = 502
     throw error
   }
@@ -82,27 +118,62 @@ export async function loginVendor(email, password) {
   return session
 }
 
-export async function getVendorProfile(vendorId) {
-  const params = new URLSearchParams({ vendor: String(vendorId) })
-  const response = await fetch(`${API_BASE_URL}/vendors?${params}`)
+// The signed-in vendor's own record, with their lifecycle `stage` and, if the application was returned, the
+// open `rejection` (reasons and flagged fields).
+export async function getVendorProfile() {
+  const response = await authFetch('/vendors/me')
   const body = await response.json().catch(() => null)
 
   if (!response.ok) {
     throw new Error(body?.error || 'Unable to load vendor details.')
   }
 
-  return Array.isArray(body) ? body[0] : body
+  return body
+}
+
+// Signup: a verified email and a phone number. The backend emails the login credentials.
+export async function signupVendor({ email, phone, verificationId }) {
+  const response = await fetch(`${API_BASE_URL}/vendors/signup`, jsonRequest('POST', {
+    email: email.trim().toLowerCase(),
+    contact_no: phone,
+    verification_id: verificationId,
+  }))
+  const body = await response.json().catch(() => null)
+
+  if (!response.ok) {
+    const error = new Error(body?.error || 'Unable to create your account. Please try again.')
+    error.status = response.status
+    error.code = body?.code
+    throw error
+  }
+  return body
+}
+
+// Saves the onboarding form as it stands (partial is fine). Resolves to the vendor's refreshed record.
+export async function saveOnboardingDraft(formData) {
+  const response = await authFetch('/vendors/me/draft', jsonRequest('PUT', toVendorPayload(formData)))
+  const body = await response.json().catch(() => null)
+  if (!response.ok) throw new Error(body?.error || 'Unable to save your progress.')
+  return body
+}
+
+// Submits (or resubmits) the application for review. `confirmedFields` are flagged fields the vendor checked
+// and kept as they were.
+export async function submitOnboarding(formData, confirmedFields = []) {
+  const response = await authFetch('/vendors/me/submit', jsonRequest('POST', {
+    details: toVendorPayload(formData),
+    confirmed_fields: confirmedFields,
+  }))
+  const body = await response.json().catch(() => null)
+  if (!response.ok) throw new Error(body?.error || 'Failed to submit your application. Please try again.')
+  return body
 }
 
 // Fired after a request is sent so any open Change Requests screen refreshes immediately.
 export const UPDATE_REQUESTS_CHANGED_EVENT = 'update-requests-changed'
 
 export async function createUpdateRequest(vendorId, details) {
-  const response = await fetch(`${API_BASE_URL}/vendors/update-requests`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ vendor_id: vendorId, details }),
-  })
+  const response = await authFetch('/vendors/update-requests', jsonRequest('POST', { vendor_id: vendorId, details }))
   const body = await response.json().catch(() => null)
 
   if (!response.ok) {
@@ -115,7 +186,7 @@ export async function createUpdateRequest(vendorId, details) {
 
 export async function getUpdateRequests(vendorId) {
   const params = new URLSearchParams({ vendor_id: String(vendorId) })
-  const response = await fetch(`${API_BASE_URL}/vendors/update-requests?${params}`)
+  const response = await authFetch(`/vendors/update-requests?${params}`)
   const body = await response.json().catch(() => null)
 
   if (!response.ok) {
@@ -127,7 +198,7 @@ export async function getUpdateRequests(vendorId) {
 
 export async function getVendorInvoices(vendorId) {
   const params = new URLSearchParams({ vendor_id: String(vendorId) })
-  const response = await fetch(`${API_BASE_URL}/invoices?${params}`)
+  const response = await authFetch(`/invoices?${params}`)
   const body = await response.json().catch(() => null)
 
   if (!response.ok) {
@@ -165,7 +236,7 @@ export async function extractInvoice(vendorId, file) {
   formData.append('vendor_id', String(vendorId))
   formData.append('invoices', file)
 
-  const response = await fetch(`${API_BASE_URL}/invoices/ocr`, {
+  const response = await authFetch('/invoices/ocr', {
     method: 'POST',
     body: formData,
   })
@@ -179,13 +250,11 @@ export async function extractInvoice(vendorId, file) {
 }
 
 // Maps the react-hook-form field names (camelCase) to the backend's
-// vendor table column names (snake_case).
+// vendor table column names (snake_case). The email is fixed at signup, so it is not sent.
 function toVendorPayload(data) {
   return {
-    name: data.vendorLegalName,
     vendor_legal_name: data.vendorLegalName,
     contact_no: joinPhone(data.vendorPhoneCode, data.vendorPhone),
-    email: data.vendorEmail,
     vendor_type: data.vendorType,
     year_established: data.yearEstablished || null,
     currency: data.currency,
@@ -210,12 +279,41 @@ function toVendorPayload(data) {
   }
 }
 
+// The inverse of toVendorPayload: the vendor's stored record as the form's (camelCase) values.
+export function toFormValues(vendor) {
+  const { code, number } = splitPhone(vendor.contact_no)
+  const text = (value) => (value == null ? '' : String(value))
+  return {
+    vendorEmail: text(vendor.email),
+    vendorPhoneCode: code,
+    vendorPhone: number,
+    vendorLegalName: text(vendor.vendor_legal_name),
+    vendorType: text(vendor.vendor_type),
+    yearEstablished: text(vendor.year_established),
+    currency: text(vendor.currency) || 'INR',
+    registrationNumber: text(vendor.registration_number),
+    msmeStatus: text(vendor.msme_status) || 'Not registered',
+    udyamNumber: text(vendor.udyam_number),
+    assignedRm: text(vendor.assigned_rm),
+    gstin: text(vendor.gstin),
+    pan: text(vendor.pan),
+    aadhaar: formatAadhaar(text(vendor.aadhaar_no)),
+    cin: text(vendor.cin),
+    registeredAddress1: text(vendor.street),
+    registeredCity: text(vendor.city),
+    registeredDistrict: text(vendor.district),
+    registeredState: text(vendor.region),
+    registeredPostalCode: text(vendor.postal_code),
+    accountHolderName: text(vendor.account_holder_name),
+    bankName: text(vendor.bank_name),
+    branchName: text(vendor.branch_name),
+    accountNumber: text(vendor.bank_account_no),
+    ifsc: text(vendor.ifsc_code),
+  }
+}
+
 async function checkExists(path, payload, errorMessage) {
-  const response = await fetch(`${API_BASE_URL}/vendors/${path}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  })
+  const response = await authFetch(`/vendors/${path}`, jsonRequest('POST', payload))
 
   if (!response.ok) {
     throw new Error(errorMessage)
@@ -254,11 +352,7 @@ async function emailVerificationRequest(path, options, fallbackMessage) {
   return body
 }
 
-const jsonPost = (payload) => ({
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify(payload),
-})
+const jsonPost = (payload) => jsonRequest('POST', payload)
 
 export function sendEmailVerification(email, recipientName) {
   return emailVerificationRequest('/send', jsonPost({ email: email.trim().toLowerCase(), recipient_name: recipientName || undefined }), 'Unable to send the verification email. Please try again.')
@@ -270,20 +364,4 @@ export function verifyEmailOtp(verificationId, otp) {
 
 export function getEmailVerificationStatus(verificationId) {
   return emailVerificationRequest(`/${encodeURIComponent(verificationId)}/status`, undefined, 'Unable to check the verification status.')
-}
-
-export async function createVendor(formData, verificationId) {
-  const response = await fetch(`${API_BASE_URL}/vendors`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...toVendorPayload(formData), verification_id: verificationId }),
-  })
-
-  const body = await response.json().catch(() => null)
-
-  if (!response.ok) {
-    throw new Error(body?.error || 'Failed to submit vendor request')
-  }
-
-  return body
 }

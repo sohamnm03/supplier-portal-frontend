@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, ArrowRight, BadgeCheck, FileCheck2, Landmark, ShieldCheck, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, BadgeCheck, Check, FileCheck2, Landmark, Save, ShieldCheck } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import PageContainer from '../components/layout/PageContainer'
 import Button from '../components/common/Button'
@@ -13,13 +13,17 @@ import VendorInformation from '../components/vendor-request/VendorInformation'
 import AddressDetails from '../components/vendor-request/AddressDetails'
 import BankDetails from '../components/vendor-request/BankDetails'
 import ReviewRequest from '../components/vendor-request/ReviewRequest'
-import useVendorRequest from '../hooks/useVendorRequest'
-import useEmailVerification from '../hooks/useEmailVerification'
-import { FORM_STEPS, STEP_FIELDS } from '../utils/constants'
-import { isValidPhone } from '../data/countryCodes'
-import { clearDraft } from '../utils/storage'
+import ReturnedBanner from '../components/vendor-request/ReturnedBanner'
 import SupportingDocuments from '../components/vendor-request/SupportingDocuments'
-import { checkEmailExists, checkPanExists, createVendor, uploadVendorDocuments } from '../api/vendorApi'
+import useVendorRequest from '../hooks/useVendorRequest'
+import useAuth from '../hooks/useAuth'
+import { FORM_STEPS, STEP_FIELDS } from '../utils/constants'
+import { KEY_BY_FORM_FIELD, buildFlags, stepOfFlag } from '../utils/rejectionFields'
+import { STAGES } from '../utils/stages'
+import { isValidPhone } from '../data/countryCodes'
+import { documentTypes } from '../data/documentTypes'
+import { FlagsContext } from '../context/flags-context'
+import { checkPanExists, getMyDocuments, saveOnboardingDraft, submitOnboarding, uploadVendorDocuments } from '../api/vendorApi'
 
 const trustPoints = [
   { icon: ShieldCheck, label: 'Secure verification' },
@@ -28,35 +32,125 @@ const trustPoints = [
 ]
 
 const GST_MANAGED_FIELDS = ['vendorLegalName', 'registeredAddress1', 'registeredState', 'registeredPostalCode']
+const normalise = (value) => String(value ?? '').trim()
+const documentLabel = (key) => documentTypes.find((type) => type.key === key)?.label || key
 
+// The vendor's onboarding application. A new vendor fills it in after signing up (progress is saved to their account
+// as they go); a vendor whose application was returned sees the flagged fields highlighted, with the reasons.
 export default function VendorRequestPage() {
   const navigate = useNavigate()
-  const form = useVendorRequest()
-  const { register, watch, setValue, setError, clearErrors, trigger, reset, handleSubmit, formState: { errors } } = form
+  const { profile, logout, refreshProfile } = useAuth()
+  const returned = profile.stage === STAGES.returned
+  const rejection = returned ? profile.rejection : null
+
+  const form = useVendorRequest(profile)
+  const { register, watch, getValues, setValue, setError, clearErrors, trigger, handleSubmit, initialValues, formState: { errors } } = form
+  const flagDefs = useMemo(() => buildFlags(rejection), [rejection])
+  const hasFlags = Object.keys(flagDefs.fields).length + Object.keys(flagDefs.documents).length > 0
+
   const [step, setStep] = useState(1)
   const [attempted, setAttempted] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [savedAt, setSavedAt] = useState(null)
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
-  const [cancelOpen, setCancelOpen] = useState(false)
-  const [emailTaken, setEmailTaken] = useState(false)
+  const [exitOpen, setExitOpen] = useState(false)
   const [panTaken, setPanTaken] = useState(false)
-  const [checkingEmail, setCheckingEmail] = useState(false)
   const [checkingPan, setCheckingPan] = useState(false)
   const [checkingDuplicates, setCheckingDuplicates] = useState(false)
   const [gstLockedFields, setGstLockedFields] = useState(GST_MANAGED_FIELDS)
   // The GSTIN verification lives here, not in step 1, so it is still shown as verified when you come back to that step.
-  const [gstLookup, setGstLookup] = useState({ loading: false, gstin: '', message: '' })
-  // Supporting documents as { [typeKey]: File[] }. Files can't go in the form state or a saved draft, so they live here.
+  // A saved GSTIN with its details filled in was verified earlier, so it starts out verified.
+  const [gstLookup, setGstLookup] = useState(() => ({
+    loading: false,
+    gstin: profile.gstin && profile.vendor_legal_name ? String(profile.gstin).trim().toUpperCase() : '',
+    message: 'GSTIN verified. Details are locked.',
+  }))
+  // New files picked in this session ({ [typeKey]: File[] }), and what is already on file for the application.
   const [documents, setDocuments] = useState({})
+  const [existingDocuments, setExistingDocuments] = useState({})
+  // Flagged items the vendor checked and says are correct as entered: form field names, and `doc:<type>` for documents.
+  const [confirmed, setConfirmed] = useState(() => new Set())
+
   const values = watch()
-  // Lives here (not in step 1) so the verified email survives moving between steps.
-  const emailVerification = useEmailVerification(values.vendorEmail)
-  // The vendor information stays locked until the contact details are done: a verified email and a valid phone number.
-  const contactReady = emailVerification.verified && isValidPhone(values.vendorPhoneCode, values.vendorPhone)
+  const contactReady = isValidPhone(values.vendorPhoneCode, values.vendorPhone)
   const currentFields = STEP_FIELDS[step - 1] || []
   const errorCount = currentFields.filter((name) => errors[name]).length
   const declarationsComplete = values.accurateDeclaration && values.termsDeclaration
 
+  useEffect(() => {
+    getMyDocuments().then(setExistingDocuments).catch(() => {})
+  }, [])
+
+  // --- Returned application: where each flagged item stands --------------------------------------------------
+  const fieldChanged = (name) => (name === 'vendorPhone'
+    ? normalise(values.vendorPhone) !== normalise(initialValues.vendorPhone) || values.vendorPhoneCode !== initialValues.vendorPhoneCode
+    : normalise(values[name]) !== normalise(initialValues[name]))
+
+  const flags = {}
+  Object.entries(flagDefs.fields).forEach(([name, def]) => {
+    flags[name] = { ...def, status: confirmed.has(name) ? 'confirmed' : fieldChanged(name) || def.fixed ? 'changed' : 'open' }
+  })
+  const documentFlags = {}
+  Object.entries(flagDefs.documents).forEach(([type, def]) => {
+    documentFlags[type] = { ...def, status: confirmed.has(`doc:${type}`) ? 'confirmed' : documents[type]?.length || def.fixed ? 'changed' : 'open' }
+  })
+
+  const flaggedItems = [
+    ...Object.entries(flags).map(([name, flag]) => ({ key: name, name, label: flag.label, reasons: flag.reasons, status: flag.status, step: stepOfFlag(name, false), document: false })),
+    ...Object.entries(documentFlags).map(([type, flag]) => ({ key: `doc:${type}`, name: type, label: documentLabel(type), reasons: flag.reasons, status: flag.status, step: stepOfFlag(type, true), document: true })),
+  ].sort((a, b) => a.step - b.step)
+  const unresolvedCount = flaggedItems.filter((item) => item.status === 'open').length
+
+  const flagsContext = useMemo(() => ({
+    flags,
+    confirm: (name) => setConfirmed((current) => new Set(current).add(name)),
+    unconfirm: (name) => setConfirmed((current) => { const next = new Set(current); next.delete(name); return next }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [JSON.stringify(flags)])
+
+  const confirmDocument = (type) => setConfirmed((current) => new Set(current).add(`doc:${type}`))
+  const unconfirmDocument = (type) => setConfirmed((current) => { const next = new Set(current); next.delete(`doc:${type}`); return next })
+
+  // Takes the vendor to a flagged field: the right step first, then scroll to it and draw the eye with a short pulse.
+  const pendingFocus = useRef(null)
+  const focusItem = useCallback((item) => {
+    const element = document.getElementById(item.document ? `doc-${item.name}` : item.name)
+    if (!element) return false
+    element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    if (!item.document) element.focus({ preventScroll: true })
+    element.classList.add('flag-pulse')
+    setTimeout(() => element.classList.remove('flag-pulse'), 1500)
+    return true
+  }, [])
+
+  const goToItem = (item) => {
+    if (item.step !== step) {
+      pendingFocus.current = item
+      setStep(item.step)
+    } else {
+      focusItem(item)
+    }
+  }
+
+  useEffect(() => {
+    if (!pendingFocus.current) return
+    const item = pendingFocus.current
+    pendingFocus.current = null
+    setTimeout(() => focusItem(item), 80)
+  }, [step, focusItem])
+
+  // A returned application opens on the first step that has something flagged, scrolled to the first open item.
+  const startedRef = useRef(false)
+  useEffect(() => {
+    if (startedRef.current || !hasFlags) return
+    startedRef.current = true
+    const first = flaggedItems.find((item) => item.status === 'open') || flaggedItems[0]
+    if (first) goToItem(first)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasFlags])
+
+  // --- Saving ---------------------------------------------------------------------------------------------------
   const setDocumentFiles = (type, files) => {
     setDocuments((current) => {
       const next = { ...current }
@@ -70,6 +164,37 @@ export default function VendorRequestPage() {
     setGstLockedFields((current) => [...new Set([...current, ...fields])])
   }
 
+  // Saves the form (and any newly picked documents) to the vendor's account. Throws on failure.
+  const persist = async () => {
+    await saveOnboardingDraft(getValues())
+    if (Object.keys(documents).length > 0) {
+      await uploadVendorDocuments(profile.vendor_id, documents)
+      setDocuments({})
+      setExistingDocuments(await getMyDocuments().catch(() => existingDocuments))
+    }
+    setSavedAt(new Date())
+  }
+
+  const saveDraft = async () => {
+    setSaving(true)
+    setSubmitError('')
+    try { await persist() } catch (err) { setSubmitError(err.message || 'Unable to save your progress.') } finally { setSaving(false) }
+  }
+
+  const saveAndExit = async () => {
+    setSaving(true)
+    try {
+      await persist()
+      logout()
+      navigate('/', { replace: true })
+    } catch (err) {
+      setExitOpen(false)
+      setSubmitError(err.message || 'Unable to save your progress, so you were not logged out.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const nextStep = async () => {
     setAttempted(true)
     setSubmitError('')
@@ -77,33 +202,34 @@ export default function VendorRequestPage() {
     if (!valid) return
 
     if (step === 1) {
-      if (!emailVerification.verified) {
-        setError('vendorEmail', { type: 'manual', message: 'Verify your email address to continue.' })
-        return
-      }
       setCheckingDuplicates(true)
       try {
-        const normalizedEmail = values.vendorEmail.trim().toLowerCase()
         const normalizedPan = values.pan.trim().toUpperCase()
-        const [emailExists, panExists] = await Promise.all([
-          checkEmailExists(normalizedEmail),
-          checkPanExists(normalizedPan),
-        ])
-
-        setEmailTaken(emailExists)
+        const panExists = await checkPanExists(normalizedPan)
         setPanTaken(panExists)
-        form.takenRef.current = { ...form.takenRef.current, pan: panExists ? normalizedPan : '', vendorEmail: emailExists ? normalizedEmail : '' }
-        if (emailExists) setError('vendorEmail', { type: 'manual', message: 'This email already exists.' })
-        else clearErrors('vendorEmail')
-        if (panExists) setError('pan', { type: 'manual', message: 'This PAN already exists.' })
-        else clearErrors('pan')
-        if (emailExists || panExists) return
+        form.takenRef.current = { ...form.takenRef.current, pan: panExists ? normalizedPan : '' }
+        if (panExists) {
+          setError('pan', { type: 'manual', message: 'This PAN already exists.' })
+          return
+        }
+        clearErrors('pan')
       } catch {
-        setSubmitError('Email and PAN availability could not be verified. Please try again.')
+        setSubmitError('PAN availability could not be verified. Please try again.')
         return
       } finally {
         setCheckingDuplicates(false)
       }
+    }
+
+    // Every step saves what has been entered so far, so the vendor can leave and pick up where they stopped.
+    setSaving(true)
+    try {
+      await persist()
+    } catch (err) {
+      setSubmitError(err.message || 'Unable to save your progress. Please try again.')
+      return
+    } finally {
+      setSaving(false)
     }
     setAttempted(false)
     setStep((current) => Math.min(current + 1, 4))
@@ -117,61 +243,31 @@ export default function VendorRequestPage() {
   }
 
   const submitRequest = handleSubmit(async (data) => {
-    if (!declarationsComplete) return
-    if (!emailVerification.verified) {
-      setSubmitError('Verify your email address before submitting.')
-      setStep(1)
-      return
-    }
+    if (!declarationsComplete || unresolvedCount > 0) return
     setSubmitting(true)
     setSubmitError('')
     try {
-      const vendor = await createVendor(data, emailVerification.verificationId)
-      // The request now exists, so a failed upload must not fail the submission (a retry would hit the duplicate
-      // PAN / email check). It is reported on the confirmation page instead.
-      let documentsFailed = false
+      // Documents go up first: they are part of what the reviewer checks, so a failed upload must stop the submission.
       if (Object.keys(documents).length > 0) {
-        try {
-          await uploadVendorDocuments(vendor.vendor_id, documents)
-        } catch {
-          documentsFailed = true
-        }
+        await uploadVendorDocuments(profile.vendor_id, documents)
+        setDocuments({})
       }
-      clearDraft()
-      navigate('/request-success', {
-        state: {
-          requestId: `VR-${vendor.vendor_id}`,
-          documentsFailed,
-          vendorName: data.vendorLegalName,
-          submissionDate: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
-        },
-      })
+      const confirmedKeys = [...confirmed].map((key) => (key.startsWith('doc:') ? `doc_${key.slice(4)}` : KEY_BY_FORM_FIELD[key])).filter(Boolean)
+      await submitOnboarding(data, confirmedKeys)
+      await refreshProfile()
+      navigate('/application-status', { replace: true, state: { submitted: true } })
     } catch (err) {
-      setSubmitError(err.message || 'Failed to submit vendor request. Please try again.')
+      setSubmitError(err.message || 'Failed to submit your application. Please try again.')
       setSubmitting(false)
     }
   }, () => setAttempted(true))
-
-  const discard = () => {
-    clearDraft()
-    reset()
-    setDocuments({})
-    setCancelOpen(false)
-    navigate('/')
-  }
 
   const renderStep = () => {
     const props = { register, errors, watch, setValue, setError, clearErrors, lockedFields: gstLockedFields, takenRef: form.takenRef }
     if (step === 1) {
       return (
         <div className="space-y-3">
-          <ContactDetails
-            {...props}
-            emailVerification={emailVerification}
-            emailTaken={emailTaken}
-            onEmailTakenChange={setEmailTaken}
-            onEmailCheckingChange={setCheckingEmail}
-          />
+          <ContactDetails {...props} />
           <VendorInformation
             {...props}
             disabled={!contactReady}
@@ -189,7 +285,14 @@ export default function VendorRequestPage() {
       return (
         <div className="space-y-3">
           <BankDetails {...props} />
-          <SupportingDocuments documents={documents} onChange={setDocumentFiles} />
+          <SupportingDocuments
+            documents={documents}
+            onChange={setDocumentFiles}
+            existing={existingDocuments}
+            flags={documentFlags}
+            onConfirm={confirmDocument}
+            onUnconfirm={unconfirmDocument}
+          />
         </div>
       )
     }
@@ -197,6 +300,7 @@ export default function VendorRequestPage() {
       <ReviewRequest
         values={values}
         documents={documents}
+        existingDocuments={existingDocuments}
         register={register}
         setValue={setValue}
         errors={errors}
@@ -204,96 +308,127 @@ export default function VendorRequestPage() {
         onBack={previousStep}
         submitting={submitting}
         declarationsComplete={declarationsComplete}
+        isResubmission={returned}
+        unresolvedCount={unresolvedCount}
       />
     )
   }
 
+  const heading = returned ? 'Update your application' : 'Request vendor account'
+
   return (
-    <AppShell backTo="/" onBack={() => setCancelOpen(true)}>
-      <PageContainer wide className="vendor-workspace h-full">
-        <section className="vendor-workspace__card grid h-full min-h-0 overflow-hidden rounded-xl border border-blue-200/80 bg-white shadow-[0_12px_36px_rgba(40,83,130,0.08)] lg:grid-cols-[240px_minmax(0,1fr)] xl:grid-cols-[260px_minmax(0,1fr)]">
-          <aside className="hidden min-h-0 flex-col overflow-hidden border-r border-blue-100 bg-[#eef7ff] p-5 lg:flex xl:p-6">
-            <div>
-              <p className="eyebrow">Vendor onboarding</p>
-              <h1 className="mt-3 text-2xl font-extrabold leading-[1.12] tracking-[-0.035em] text-navy-950">
-                Request your vendor account
-              </h1>
-              <p className="mt-3 text-xs leading-5 text-slate-600">
-                Complete your company, tax, address, and bank details to start managing invoices and payments.
-              </p>
-            </div>
+    <FlagsContext.Provider value={flagsContext}>
+      <AppShell backTo="/" onBack={() => setExitOpen(true)}>
+        <PageContainer wide className="vendor-workspace h-full">
+          <section className="vendor-workspace__card grid h-full min-h-0 overflow-hidden rounded-xl border border-blue-200/80 bg-white shadow-[0_12px_36px_rgba(40,83,130,0.08)] lg:grid-cols-[240px_minmax(0,1fr)] xl:grid-cols-[260px_minmax(0,1fr)]">
+            <aside className="hidden min-h-0 flex-col overflow-hidden border-r border-blue-100 bg-[#eef7ff] p-5 lg:flex xl:p-6">
+              <div>
+                <p className="eyebrow">Vendor onboarding</p>
+                <h1 className="mt-3 text-2xl font-extrabold leading-[1.12] tracking-[-0.035em] text-navy-950">
+                  {returned ? 'Fix and resubmit your application' : 'Request your vendor account'}
+                </h1>
+                <p className="mt-3 text-xs leading-5 text-slate-600">
+                  {returned
+                    ? 'Our team flagged a few details. Update them, or confirm they are correct, then send the application back for review.'
+                    : 'Complete your company, tax, address, and bank details to start managing invoices and payments.'}
+                </p>
+              </div>
 
-            <div className="mt-5 space-y-2">
-              {trustPoints.map(({ icon: Icon, label }) => (
-                <div key={label} className="flex min-h-10 items-center gap-2.5 rounded-lg border border-blue-200/80 bg-white/75 px-3 text-[11px] font-bold text-navy-900">
-                  <span className="grid size-7 shrink-0 place-items-center rounded-full bg-brand-600 text-white">
-                    <Icon size={16} />
-                  </span>
-                  {label}
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-auto pt-5">
-              <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Application progress</p>
-              <div className="mt-3 space-y-2">
-                {FORM_STEPS.map((item) => (
-                  <div key={item.id} className="flex items-center gap-3">
-                    <span className={`grid size-6 shrink-0 place-items-center rounded-full text-[10px] font-bold ${item.id < step ? 'bg-emerald-100 text-emerald-700' : item.id === step ? 'bg-brand-600 text-white' : 'border border-slate-300 bg-white text-slate-500'}`}>
-                      {item.id < step ? <BadgeCheck size={14} /> : item.id}
+              <div className="mt-5 space-y-2">
+                {trustPoints.map(({ icon: Icon, label }) => (
+                  <div key={label} className="flex min-h-10 items-center gap-2.5 rounded-lg border border-blue-200/80 bg-white/75 px-3 text-[11px] font-bold text-navy-900">
+                    <span className="grid size-7 shrink-0 place-items-center rounded-full bg-brand-600 text-white">
+                      <Icon size={16} />
                     </span>
-                    <span className={`text-xs font-semibold ${item.id === step ? 'text-navy-900' : 'text-slate-500'}`}>{item.longTitle}</span>
+                    {label}
                   </div>
                 ))}
               </div>
-            </div>
-          </aside>
 
-          <div className="flex min-h-0 min-w-0 flex-col px-4 py-3 sm:px-6 xl:px-7">
-            <header className="mb-3 flex flex-col gap-2 border-b border-slate-100 pb-3 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <h2 className="mt-1 text-xl font-extrabold tracking-[-0.03em] text-navy-950 sm:text-2xl">Request vendor account</h2>
-                <p className="mt-1 text-xs leading-5 text-slate-600">{FORM_STEPS[step - 1].longTitle} · Fields marked with an asterisk are required.</p>
+              <div className="mt-auto pt-5">
+                <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Application progress</p>
+                <div className="mt-3 space-y-2">
+                  {FORM_STEPS.map((item) => (
+                    <div key={item.id} className="flex items-center gap-3">
+                      <span className={`grid size-6 shrink-0 place-items-center rounded-full text-[10px] font-bold ${item.id < step ? 'bg-emerald-100 text-emerald-700' : item.id === step ? 'bg-brand-600 text-white' : 'border border-slate-300 bg-white text-slate-500'}`}>
+                        {item.id < step ? <BadgeCheck size={14} /> : item.id}
+                      </span>
+                      <span className={`text-xs font-semibold ${item.id === step ? 'text-navy-900' : 'text-slate-500'}`}>{item.longTitle}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </header>
+            </aside>
 
-            <FormProgress currentStep={step} />
-            <form className="flex min-h-0 flex-1 flex-col" onSubmit={submitRequest} noValidate>
-              <div className="-mr-1 min-h-0 flex-1 overflow-y-auto pr-1">
-                {attempted && <FormError count={errorCount} />}
-                {submitError && (
-                  <div role="alert" className="mb-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-                    <span className="font-semibold">Submission failed.</span> {submitError}
+            <div className="flex min-h-0 min-w-0 flex-col px-4 py-3 sm:px-6 xl:px-7">
+              <header className="mb-2 flex flex-col gap-1 border-b border-slate-100 pb-2 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <h2 className="mt-1 text-xl font-extrabold tracking-[-0.03em] text-navy-950 sm:text-2xl">{heading}</h2>
+                  <p className="mt-1 text-xs leading-5 text-slate-600">{FORM_STEPS[step - 1].longTitle} · Fields marked with an asterisk are required.</p>
+                </div>
+                {savedAt && (
+                  <p className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700" role="status">
+                    <Check size={13} /> Progress saved at {savedAt.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}
+                  </p>
+                )}
+              </header>
+
+              <FormProgress currentStep={step} />
+              <form className="flex min-h-0 flex-1 flex-col" onSubmit={submitRequest} noValidate>
+                <div className="relative min-h-0 flex-1">
+                <div className="h-full min-w-0 overflow-y-auto overflow-x-hidden pb-3 pr-1">
+                  {rejection && hasFlags && <ReturnedBanner rejection={rejection} items={flaggedItems} onGo={goToItem} />}
+                  {rejection && !hasFlags && rejection.overall_remark && (
+                    <p className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"><strong>Note from our team:</strong> {rejection.overall_remark}</p>
+                  )}
+                  {attempted && <FormError count={errorCount} />}
+                  {submitError && (
+                    <div role="alert" className="mb-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+                      <span className="font-semibold">Something went wrong.</span> {submitError}
+                    </div>
+                  )}
+
+                  {renderStep()}
+                </div>
+                {step !== 4 && <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-4 bg-gradient-to-t from-white to-transparent" />}
+                </div>
+
+                {step !== 4 && (
+                  <div className="z-20 mt-3 shrink-0 rounded-lg border border-slate-300 bg-slate-50 p-2">
+                    <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <Button type="button" variant="ghost" onClick={saveDraft} disabled={saving}>
+                        {saving ? <Loader /> : <Save size={17} />} Save draft
+                      </Button>
+                      <div className="flex flex-col-reverse gap-2 sm:flex-row">
+                        {step > 1 && <Button type="button" variant="secondary" onClick={previousStep}><ArrowLeft size={17} /> Back</Button>}
+                        <Button
+                          type="button"
+                          onClick={nextStep}
+                          disabled={saving || checkingDuplicates || checkingPan || panTaken}
+                        >
+                          {saving || checkingDuplicates || checkingPan ? <><Loader /> {saving ? 'Saving...' : 'Checking...'}</> : <>{step === 3 ? 'Review request' : 'Continue'} <ArrowRight size={17} /></>}
+                        </Button>
+                      </div>
+                    </div>
                   </div>
                 )}
-
-                {renderStep()}
-              </div>
-
-              {step !== 4 && (
-                <div className="z-20 mt-3 shrink-0 rounded-lg border border-slate-200 bg-white p-2 shadow-[0_-4px_18px_rgba(16,42,76,0.05)] sm:p-2.5">
-                  <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="flex flex-col-reverse gap-2 sm:flex-row">
-                      <Button type="button" variant="ghost" onClick={() => setCancelOpen(true)}><X size={17} /> Cancel</Button>
-                    </div>
-                    <div className="flex flex-col-reverse gap-2 sm:flex-row">
-                      {step > 1 && <Button type="button" variant="secondary" onClick={previousStep}><ArrowLeft size={17} /> Back</Button>}
-                      <Button
-                        type="button"
-                        onClick={nextStep}
-                        disabled={checkingDuplicates || checkingEmail || checkingPan || emailTaken || panTaken || (step === 1 && !emailVerification.verified)}
-                      >
-                        {checkingDuplicates || checkingEmail || checkingPan ? <><Loader /> Checking...</> : <>{step === 3 ? 'Review request' : 'Continue'} <ArrowRight size={17} /></>}
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </form>
-          </div>
-        </section>
-      </PageContainer>
-      <Modal open={cancelOpen} onClose={() => setCancelOpen(false)} onConfirm={discard} />
-    </AppShell>
+              </form>
+            </div>
+          </section>
+        </PageContainer>
+        <Modal
+          open={exitOpen}
+          onClose={() => setExitOpen(false)}
+          onConfirm={saveAndExit}
+          busy={saving}
+          busyLabel="Saving…"
+          title="Save and log out?"
+          description="Your progress is saved to your account. Log in again any time to pick up where you left off."
+          cancelLabel="Keep editing"
+          confirmLabel="Save and log out"
+          confirmVariant="primary"
+        />
+      </AppShell>
+    </FlagsContext.Provider>
   )
 }

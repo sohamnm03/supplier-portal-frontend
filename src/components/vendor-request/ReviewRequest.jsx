@@ -38,7 +38,9 @@ const sections = [
   },
 ]
 
-export default function ReviewRequest({ values, documents = {}, register, setValue, errors, onEdit, onBack, submitting, declarationsComplete }) {
+// existingDocuments is what is already on file ({ [typeKey]: [{ original_name }] }); `documents` are new files picked in this
+// session, which replace it. unresolvedCount is how many flagged items of a returned application are still open.
+export default function ReviewRequest({ values, documents = {}, existingDocuments = {}, register, setValue, errors, onEdit, onBack, submitting, declarationsComplete, isResubmission = false, unresolvedCount = 0 }) {
   const [termsOpen, setTermsOpen] = useState(false)
 
   const handleTermsClick = (event) => {
@@ -95,7 +97,9 @@ export default function ReviewRequest({ values, documents = {}, register, setVal
               <div key={key}>
                 <dt className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">{label}</dt>
                 <dd className="mt-0.5 break-words text-xs font-semibold text-slate-800">
-                  {documents[key]?.length ? documents[key].map((file) => file.name).join(', ') : '—'}
+                  {documents[key]?.length
+                    ? documents[key].map((file) => file.name).join(', ')
+                    : existingDocuments[key]?.length ? `${existingDocuments[key].map((file) => file.original_name).join(', ')} (on file)` : '—'}
                 </dd>
               </div>
             ))}
@@ -122,11 +126,16 @@ export default function ReviewRequest({ values, documents = {}, register, setVal
           </div>
           <div className="flex shrink-0 flex-col-reverse gap-2 sm:flex-row">
             <Button type="button" variant="secondary" onClick={onBack}><ArrowLeft size={17} /> Back</Button>
-            <Button type="submit" disabled={!declarationsComplete || submitting}>
-              {submitting ? <><Loader /> Sending…</> : <><Send size={17} /> Send request</>}
+            <Button type="submit" disabled={!declarationsComplete || submitting || unresolvedCount > 0}>
+              {submitting ? <><Loader /> Sending…</> : <><Send size={17} /> {isResubmission ? 'Resubmit application' : 'Send request'}</>}
             </Button>
           </div>
         </div>
+        {unresolvedCount > 0 && (
+          <p role="status" className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-800">
+            {unresolvedCount} {unresolvedCount === 1 ? 'item' : 'items'} sent back by our team {unresolvedCount === 1 ? 'is' : 'are'} still waiting for your update or confirmation. Go back and fix {unresolvedCount === 1 ? 'it' : 'them'} to resubmit.
+          </p>
+        )}
       </section>
       <TermsPolicyModal open={termsOpen} onClose={() => setTermsOpen(false)} onAccept={acceptTerms} />
     </div>

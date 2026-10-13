@@ -1,6 +1,8 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Check, ChevronDown, Search } from 'lucide-react'
+import FlagNote from './FlagNote'
+import { flagClass, useFlag } from '../../context/flags-context'
 
 const LIST_MAX_HEIGHT = 240
 const MIN_LIST_HEIGHT = 120
@@ -22,6 +24,7 @@ export default function SelectMenu({ label, name, register, watch, setValue, err
   const listRef = useRef(null)
   const listId = useId()
   const errorId = error ? `${name}-error` : undefined
+  const flag = useFlag(name)
 
   const value = watch(name) || ''
   const rows = useMemo(() => {
@@ -128,7 +131,7 @@ export default function SelectMenu({ label, name, register, watch, setValue, err
         tabIndex={locked ? -1 : undefined}
         onClick={() => (open ? close() : !locked && openList())}
         onKeyDown={onTriggerKeyDown}
-        className={`app-field flex items-center justify-between gap-2 text-left ${locked ? 'app-field--locked' : ''}`}
+        className={`app-field flex items-center justify-between gap-2 text-left ${locked ? 'app-field--locked' : ''} ${flagClass(flag)}`}
       >
         <span className={`truncate ${value ? '' : 'text-[#91a3ba]'}`}>{value || placeholder}</span>
         <ChevronDown size={16} className={`shrink-0 text-slate-500 transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true" />
@@ -184,6 +187,7 @@ export default function SelectMenu({ label, name, register, watch, setValue, err
         document.body,
       )}
       {error && <p id={errorId} className="mt-1 text-[11px] font-medium text-red-600">{error.message}</p>}
+      <FlagNote name={name} />
     </div>
   )
 }

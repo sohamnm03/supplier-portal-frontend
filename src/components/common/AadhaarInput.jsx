@@ -1,10 +1,13 @@
 import { maskAadhaarInput } from '../../utils/formatters'
+import FlagNote from './FlagNote'
+import { flagClass, useFlag } from '../../context/flags-context'
 
 // One field that groups what is typed or pasted into three sets of four digits ("1234 5678 9012").
 // The value kept in the form carries the spaces; strip them before sending it anywhere.
 export default function AadhaarInput({ label, name, register, error, hint, required, className = '' }) {
   const field = register(name)
   const errorId = error ? `${name}-error` : undefined
+  const flag = useFlag(name)
 
   const handleChange = (event) => {
     maskAadhaarInput(event.target)
@@ -18,7 +21,7 @@ export default function AadhaarInput({ label, name, register, error, hint, requi
       </label>
       <input
         id={name}
-        className="app-field min-w-0 tracking-wider tabular-nums"
+        className={`app-field min-w-0 tracking-wider tabular-nums ${flagClass(flag)}`}
         type="text"
         inputMode="numeric"
         autoComplete="off"
@@ -32,6 +35,7 @@ export default function AadhaarInput({ label, name, register, error, hint, requi
       />
       {hint && !error && <p className="mt-1 text-[11px] leading-4 text-slate-500">{hint}</p>}
       {error && <p id={errorId} className="mt-1 text-[11px] font-medium text-red-600">{error.message}</p>}
+      <FlagNote name={name} />
     </div>
   )
 }

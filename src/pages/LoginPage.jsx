@@ -1,10 +1,12 @@
 import { useState } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
-import { ArrowRight, BadgeCheck, Building2, Check, Clock3, Eye, EyeOff, Landmark, RefreshCw, ShieldCheck } from 'lucide-react'
+import { Navigate, useNavigate } from 'react-router-dom'
+import { ArrowRight, BadgeCheck, Building2, Check, Eye, EyeOff, Landmark, RefreshCw, ShieldCheck } from 'lucide-react'
 import AppLogo from '../components/common/AppLogo'
 import Loader from '../components/common/Loader'
+import SignupModal from '../components/auth/SignupModal'
 import useAuth from '../hooks/useAuth'
 import { getVendorProfile, loginVendor } from '../api/vendorApi'
+import { homeForStage } from '../utils/stages'
 
 const applicationSteps = [
   ['1', 'Tell us about your business', 'Company, tax and contact information'],
@@ -25,9 +27,9 @@ function createCaptcha() {
 }
 
 export default function LoginPage() {
-  const { login, logout } = useAuth()
+  const { login, logout, updateProfile, isAuthenticated, stage } = useAuth()
   const navigate = useNavigate()
-  const location = useLocation()
+  const [signupOpen, setSignupOpen] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -36,8 +38,6 @@ export default function LoginPage() {
   const [captchaError, setCaptchaError] = useState('')
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
-
-  const goToDestination = () => navigate(location.state?.from?.pathname || '/invoices', { replace: true })
 
   const refreshCaptcha = () => {
     setCaptchaCode(createCaptcha())
@@ -68,9 +68,12 @@ export default function LoginPage() {
     setSubmitting(true)
     try {
       const session = await loginVendor(normalizedEmail, password)
-      const profile = await getVendorProfile(session.vendor_id)
-      login(session.email || normalizedEmail, 'user', session.vendor_id, profile)
-      goToDestination()
+      // The session token is stored by login(); the vendor's record is then read with it. Where they land depends
+      // on their stage: the application form, the progress page, or (once approved) invoices.
+      login({ email: session.email || normalizedEmail, vendorId: session.vendor_id, token: session.token })
+      const profile = await getVendorProfile()
+      updateProfile(profile)
+      navigate(homeForStage(profile.stage), { replace: true })
     } catch (requestError) {
       logout()
       setError(requestError?.status === 401
@@ -82,10 +85,15 @@ export default function LoginPage() {
     }
   }
 
-  const handleCreateVendor = () => {
-    login('guest', 'guest')
-    navigate('/request-vendor')
+  // After signing up, drop the vendor at the login form with their email filled in.
+  const handleSignedUp = (signedUpEmail) => {
+    setSignupOpen(false)
+    setEmail(signedUpEmail)
+    setPassword('')
+    setTimeout(() => document.getElementById('login-password')?.focus(), 0)
   }
+
+  if (isAuthenticated && stage) return <Navigate to={homeForStage(stage)} replace />
 
   return (
     <main className="vendor-login">
@@ -130,17 +138,16 @@ export default function LoginPage() {
               ))}
             </div>
 
-            <button type="button" className="vendor-login__primary" onClick={handleCreateVendor}>
+            <button type="button" className="vendor-login__primary" onClick={() => setSignupOpen(true)}>
               Start vendor application <ArrowRight size={18} />
             </button>
-            <p className="vendor-login__save-note"><Clock3 size={14} /> You can save a draft and return later.</p>
           </div>
 
-          <div className="vendor-login__divider"><span>Already an approved vendor?</span></div>
+          <div className="vendor-login__divider"><span>Already have an account?</span></div>
 
           <div className="vendor-login__signin">
             <div className="vendor-login__signin-heading">
-              <div><h3>Sign in to your account</h3><p>Access invoices and your vendor profile.</p></div>
+              <div><h3>Login to your account</h3><p>Continue your application, or access invoices and your vendor profile.</p></div>
               <Check size={17} aria-hidden="true" />
             </div>
 
@@ -200,11 +207,12 @@ export default function LoginPage() {
             {error && <div className="vendor-login__error" role="alert">{error}</div>}
 
             <button type="submit" className="vendor-login__secondary" disabled={submitting}>
-              {submitting ? <><Loader /> Signing in…</> : <>Sign in <ArrowRight size={17} /></>}
+              {submitting ? <><Loader /> Logging in…</> : <>Login <ArrowRight size={17} /></>}
             </button>
           </div>
         </form>
       </section>
+      <SignupModal open={signupOpen} onClose={() => setSignupOpen(false)} onSignedUp={handleSignedUp} />
     </main>
   )
 }

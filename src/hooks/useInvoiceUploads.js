@@ -51,7 +51,7 @@ export default function useInvoiceUploads(vendorId) {
 
     if (!vendorId) {
       setInvoices([])
-      setLoadError('Vendor ID is missing. Please sign in again.')
+      setLoadError('Vendor ID is missing. Please log in again.')
       setIsLoading(false)
       return () => { ignore = true }
     }
@@ -81,7 +81,7 @@ export default function useInvoiceUploads(vendorId) {
 
   const extractItem = useCallback(async (item) => {
     if (!vendorId) {
-      patchInvoice(item.id, { extractionStatus: 'failed', extractionError: 'Vendor ID is missing. Please sign in again.' })
+      patchInvoice(item.id, { extractionStatus: 'failed', extractionError: 'Vendor ID is missing. Please log in again.' })
       return
     }
 

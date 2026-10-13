@@ -114,13 +114,13 @@ export default function VendorInformation({ register, errors, watch, setValue, s
       {disabled && (
         <p role="status" className="mb-3 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
           <Lock size={14} className="shrink-0" />
-          Verify your email and enter a valid phone number above to fill in the vendor information.
+          Enter a valid phone number above to fill in the vendor information.
         </p>
       )}
       {/* A disabled fieldset disables every native control inside it, including the custom selects. */}
       {/* Three columns from tablet width up, so the rows read: GSTIN + legal name / PAN, Aadhaar, registration no. /
           type, year, currency / MSME, Udyam, relationship manager. */}
-      <fieldset disabled={disabled} className={`grid min-w-0 gap-x-3.5 gap-y-3 transition-opacity md:grid-cols-3 ${disabled ? 'opacity-50' : ''}`}>
+      <fieldset disabled={disabled} className={`grid min-w-0 gap-x-3.5 gap-y-2.5 transition-opacity md:grid-cols-3 ${disabled ? 'opacity-50' : ''}`}>
         <Input
           label="GSTIN"
           name="gstin"

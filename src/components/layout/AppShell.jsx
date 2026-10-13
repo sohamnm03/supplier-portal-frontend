@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { ArrowLeft, ChevronRight, FilePenLine, FileText, Home, LogOut } from 'lucide-react'
 import AppLogo from '../common/AppLogo'
 import useAuth from '../../hooks/useAuth'
 import VendorProfilePanel from './VendorProfilePanel'
-import { getVendorProfile } from '../../api/vendorApi'
+import { STAGES, homeForStage } from '../../utils/stages'
 
 const NAV_ITEMS = [
   { to: '/invoices', label: 'Invoices', icon: FileText },
@@ -12,21 +12,15 @@ const NAV_ITEMS = [
 ]
 
 export default function AppShell({ breadcrumb, children, backTo, onBack }) {
-  const { logout, user, profile, updateProfile } = useAuth()
+  const { logout, user, profile, stage, updateProfile } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [profileOpen, setProfileOpen] = useState(false)
-  const showSidebar = user?.role === 'user' && !backTo
-  const homePath = user?.role === 'guest' ? '/request-vendor' : '/invoices'
-
-  useEffect(() => {
-    if (user?.role !== 'user' || !user.vendor_id || profile) return undefined
-    let ignore = false
-    getVendorProfile(user.vendor_id)
-      .then((details) => { if (!ignore) updateProfile(details) })
-      .catch(() => {})
-    return () => { ignore = true }
-  }, [profile, updateProfile, user])
+  // Invoices, change requests and the editable profile only exist once the vendor is active; until then the
+  // vendor just follows their application.
+  const isActive = stage === STAGES.active
+  const showSidebar = isActive && !backTo
+  const homePath = homeForStage(stage)
 
   const handleSignOut = () => {
     logout()
@@ -63,8 +57,8 @@ export default function AppShell({ breadcrumb, children, backTo, onBack }) {
             </Link>
             <button
               type="button"
-              onClick={() => user?.role === 'user' && setProfileOpen(true)}
-              disabled={user?.role !== 'user'}
+              onClick={() => isActive && setProfileOpen(true)}
+              disabled={!isActive}
               className="hidden items-center gap-2 border-l border-slate-200 pl-3 text-left transition hover:text-brand-700 disabled:cursor-default sm:flex"
               aria-label="Open vendor profile"
             >
@@ -72,10 +66,10 @@ export default function AppShell({ breadcrumb, children, backTo, onBack }) {
                 {(user?.email?.[0] || 'V').toUpperCase()}
               </span>
               <span className="max-w-36 truncate text-xs font-semibold text-slate-600">
-                {user?.email === 'guest' ? 'New vendor' : user?.email}
+                {user?.email}
               </span>
             </button>
-            <button onClick={handleSignOut} aria-label="Sign out" title="Sign out" className="interactive-icon">
+            <button onClick={handleSignOut} aria-label="Log out" title="Log out" className="interactive-icon">
               <LogOut size={18} />
             </button>
           </div>

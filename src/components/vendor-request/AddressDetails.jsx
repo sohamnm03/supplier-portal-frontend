@@ -2,10 +2,12 @@ import { MapPin, Receipt } from 'lucide-react'
 import Input from '../common/Input'
 import FormSection from './FormSection'
 import AddressFields from './AddressFields'
+import { useFlag } from '../../context/flags-context'
 
 export default function AddressDetails({ register, errors, watch, setValue, lockedFields = [] }) {
   const vendorType = watch('vendorType')
-  const showCin = ['Private limited company', 'Public limited company'].includes(vendorType)
+  const cinFlagged = Boolean(useFlag('cin'))
+  const showCin = cinFlagged || ['Private limited company', 'Public limited company'].includes(vendorType)
 
   return (
     <div className="space-y-3">

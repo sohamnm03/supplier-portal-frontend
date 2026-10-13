@@ -3,7 +3,7 @@ import { FORM_STEPS } from '../../utils/constants'
 
 export default function FormProgress({ currentStep }) {
   return (
-    <div className="mb-3" aria-label={`Step ${currentStep} of ${FORM_STEPS.length}`}>
+    <div className="mb-2" aria-label={`Step ${currentStep} of ${FORM_STEPS.length}`}>
       <div className="mb-3 flex items-center justify-between sm:hidden">
         <span className="text-xs font-bold uppercase tracking-wider text-brand-600">Step {currentStep} of {FORM_STEPS.length}</span>
         <span className="text-sm font-semibold text-navy-900">{FORM_STEPS[currentStep - 1].longTitle}</span>
@@ -18,7 +18,7 @@ export default function FormProgress({ currentStep }) {
           const active = item.id === currentStep
           return (
             <li key={item.id} aria-current={active ? 'step' : undefined} className={`relative flex min-w-0 items-center ${index < FORM_STEPS.length - 1 ? 'flex-1' : ''}`}>
-              <div className={`relative z-10 flex min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 ${active ? 'bg-slate-50' : ''}`}>
+              <div className={`relative z-10 flex min-w-0 items-center gap-2 rounded-lg px-2 py-1 ${active ? 'bg-slate-50' : ''}`}>
                 <span className={`grid size-7 shrink-0 place-items-center rounded-full text-[11px] font-bold shadow-sm ${done ? 'bg-brand-600 text-white' : active ? 'bg-brand-600 text-white' : 'border border-slate-300 bg-white text-slate-500'}`}>
                   {done ? <Check size={15} /> : active && index < 3 ? <Pencil size={14} /> : item.id}
                 </span>

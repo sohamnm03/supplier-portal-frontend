@@ -4,10 +4,11 @@ import Footer from '../components/layout/Footer'
 import PageContainer from '../components/layout/PageContainer'
 import AppLogo from '../components/common/AppLogo'
 import useAuth from '../hooks/useAuth'
+import { homeForStage } from '../utils/stages'
 
 export default function NotFoundPage() {
-  const { isAuthenticated, user } = useAuth()
-  const homePath = user?.role === 'guest' ? '/request-vendor' : '/invoices'
+  const { isAuthenticated, stage } = useAuth()
+  const homePath = homeForStage(stage)
   return (
     <div className="relative flex min-h-screen flex-col overflow-hidden bg-[#f4f8fc]">
       <div className="pointer-events-none absolute -right-28 top-20 size-96 rounded-full border-[60px] border-blue-100/50" aria-hidden="true" />

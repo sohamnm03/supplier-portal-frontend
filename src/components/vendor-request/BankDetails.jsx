@@ -10,11 +10,11 @@ export default function BankDetails({ register, errors }) {
     <FormSection
       icon={Landmark}
       title="Bank details"
-      description="Bank information is used only in this session and is never stored in a browser draft."
+      description="Used to pay your invoices. Your progress is saved to your account, not to this browser."
     >
       <div className="mb-4 flex items-start gap-2.5 rounded-lg border border-blue-200 bg-brand-50 px-3 py-2 text-xs leading-5 text-brand-700">
         <ShieldAlert size={17} className="mt-0.5 shrink-0" />
-        <span>For your security, account and routing details are excluded when you save a draft.</span>
+        <span>Double-check the account number and IFSC code: they must match your bank proof exactly.</span>
       </div>
       <div className="form-grid">
         <Input
