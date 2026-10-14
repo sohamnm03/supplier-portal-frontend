@@ -12,7 +12,7 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 // "Start vendor application": the vendor gives only their contact details (a verified email and a phone number).
 // The account is created and the login details are emailed; the rest of the application is filled in after signing in.
-export default function SignupModal({ open, onClose, onSignedUp }) {
+export default function SignupModal({ open, onClose, onSignedUp, initialEmail = '' }) {
   const [email, setEmail] = useState('')
   const [phoneCode, setPhoneCode] = useState(DEFAULT_COUNTRY_CODE)
   const [phone, setPhone] = useState('')
@@ -42,6 +42,11 @@ export default function SignupModal({ open, onClose, onSignedUp }) {
     verification.reset()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
+
+  // Opened with an email (a vendor starting a new application): fill it in, they still verify it with a code.
+  useEffect(() => {
+    if (open && initialEmail) setEmail(initialEmail)
+  }, [open, initialEmail])
 
   if (!open) return null
 
@@ -90,29 +95,46 @@ export default function SignupModal({ open, onClose, onSignedUp }) {
       role="presentation"
       onMouseDown={(event) => event.target === event.currentTarget && !submitting && onClose()}
     >
-      <div role="dialog" aria-modal="true" aria-labelledby="signup-title" className="w-full max-w-lg rounded-xl border border-slate-200 bg-white px-6 pb-6 pt-5 text-[13px] shadow-2xl">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="eyebrow">New vendor</p>
-            <h2 id="signup-title" className="mt-1 text-lg font-bold leading-6 text-navy-900">
-              {created ? 'Check your email' : 'Create your vendor account'}
-            </h2>
-          </div>
-          <button type="button" onClick={onClose} disabled={submitting} aria-label="Close" className="interactive-icon -mr-2 !min-h-9 !min-w-9">
+      <div role="dialog" aria-modal="true" aria-labelledby="signup-title" className="relative w-full max-w-lg rounded-xl border border-slate-200 bg-white px-6 pb-6 pt-5 text-[13px] shadow-2xl">
+        {created ? (
+          <button type="button" onClick={onClose} aria-label="Close" className="interactive-icon absolute right-3 top-3 !min-h-9 !min-w-9">
             <X size={18} />
           </button>
-        </div>
+        ) : (
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="eyebrow">New vendor</p>
+              <h2 id="signup-title" className="mt-1 text-lg font-bold leading-6 text-navy-900">Create your vendor account</h2>
+            </div>
+            <button type="button" onClick={onClose} disabled={submitting} aria-label="Close" className="interactive-icon -mr-2 !min-h-9 !min-w-9">
+              <X size={18} />
+            </button>
+          </div>
+        )}
 
         {created ? (
-          <div className="mt-4">
-            <span className="grid size-12 place-items-center rounded-full bg-emerald-100 text-emerald-700"><CheckCircle2 size={26} /></span>
-            <p className="mt-4 text-[13px] leading-5 text-slate-600">
-              Your account is ready. We’ve emailed your login details to
-              <strong className="mt-1 block break-words font-bold text-navy-900">{email.trim()}</strong>
-              <span className="mt-2 block">Log in with them to complete your vendor application.</span>
+          <div className="flex flex-col items-center pt-2 text-center">
+            <span className="grid size-16 place-items-center rounded-full bg-emerald-50 ring-8 ring-emerald-50/60">
+              <span className="grid size-11 place-items-center rounded-full bg-emerald-100 text-emerald-700"><CheckCircle2 size={26} /></span>
+            </span>
+            <p className="eyebrow mt-5">Account created</p>
+            <h2 id="signup-title" className="mt-1 text-xl font-extrabold tracking-tight text-navy-950">Your account is ready</h2>
+            <p className="mt-2 text-[13px] leading-5 text-slate-600">We’ve emailed your login details to</p>
+            <p className="mt-2 inline-flex max-w-full items-center gap-2 rounded-full border border-blue-100 bg-brand-50 px-4 py-2 text-[13px] font-bold text-navy-900">
+              <MailCheck size={15} className="shrink-0 text-brand-600" aria-hidden="true" />
+              <span className="min-w-0 break-all">{email.trim()}</span>
             </p>
-            <p className="mt-2 text-[11px] leading-4 text-slate-500">It may take a minute to arrive and can land in spam.</p>
-            <Button className="mt-6 w-full" onClick={() => onSignedUp(email.trim())}>Go to login</Button>
+
+            <ol className="mt-5 w-full space-y-2.5 rounded-lg border border-slate-200 bg-slate-50/70 p-4 text-left" aria-label="What to do next">
+              {['Open the email and copy your password.', 'Log in with your email and that password.', 'Complete your vendor application. You can save your progress and come back.'].map((step, index) => (
+                <li key={step} className="flex items-start gap-3 text-xs leading-5 text-slate-700">
+                  <span className="mt-px grid size-5 shrink-0 place-items-center rounded-full bg-brand-600 text-[10px] font-bold text-white">{index + 1}</span>
+                  {step}
+                </li>
+              ))}
+            </ol>
+            <p className="mt-3 text-[11px] leading-4 text-slate-500">It may take a minute to arrive and can land in your spam folder.</p>
+            <Button className="mt-5 w-full" onClick={() => onSignedUp(email.trim())}>Go to login</Button>
           </div>
         ) : (
           <form onSubmit={createAccount} noValidate className="mt-3">

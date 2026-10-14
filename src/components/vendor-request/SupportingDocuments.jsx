@@ -35,8 +35,8 @@ function DocumentSlot({ type, files, onChange, existing = [], flag, onConfirm, o
   }
 
   return (
-    <div id={`doc-${type.key}`} className={`rounded-lg border bg-white p-3 ${flag?.status === 'open' ? 'border-red-300 bg-red-50/40' : 'border-slate-200'}`}>
-      <div className="mb-2">
+    <div id={`doc-${type.key}`} className={`flex h-full flex-col rounded-lg border bg-white p-3 ${flag?.status === 'open' ? 'border-red-300 bg-red-50/40' : 'border-slate-200'}`}>
+      <div className="mb-2 min-h-9">
         <p className="text-[11px] font-bold uppercase tracking-[0.04em] text-navy-900">{type.label}</p>
         {type.hint && <p className="text-[11px] leading-4 text-slate-500">{type.hint}</p>}
       </div>
@@ -91,7 +91,7 @@ function DocumentSlot({ type, files, onChange, existing = [], flag, onConfirm, o
           onDragLeave={() => setDragActive(false)}
           onDrop={(event) => { event.preventDefault(); setDragActive(false); addFiles(event.dataTransfer.files) }}
           aria-label={`${files.length === 0 ? 'Upload' : type.max === 1 ? 'Replace' : 'Add another file to'} ${type.label}`}
-          className={`flex min-h-12 w-full items-center justify-center gap-2 rounded-lg border border-dashed px-3 text-xs font-bold transition ${dragActive ? 'border-brand-500 bg-blue-50 text-brand-700' : 'border-[#c6d5e6] bg-[#fbfcfe] text-brand-600 hover:border-blue-300 hover:bg-blue-50/40'}`}
+          className={`mt-auto flex min-h-12 w-full items-center justify-center gap-2 rounded-lg border border-dashed px-3 text-xs font-bold transition ${dragActive ? 'border-brand-500 bg-blue-50 text-brand-700' : 'border-[#c6d5e6] bg-[#fbfcfe] text-brand-600 hover:border-blue-300 hover:bg-blue-50/40'}`}
         >
           <UploadCloud size={16} aria-hidden="true" />
           {files.length === 0 && existing.length === 0 ? 'Click or drag a file' : type.max === 1 ? 'Replace file' : files.length === 0 ? 'Replace files' : 'Add another file'}

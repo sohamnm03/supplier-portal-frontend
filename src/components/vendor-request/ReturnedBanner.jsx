@@ -9,7 +9,6 @@ const formatDate = (value) => {
 // [{ key, label, reasons, status, step }]; `onGo` jumps to the field (changing step if needed).
 export default function ReturnedBanner({ rejection, items, onGo }) {
   const open = items.filter((item) => item.status === 'open').length
-  const stage = rejection.rejected_by_role === 'checker' ? 'final approval' : 'first review'
 
   return (
     <section role="region" aria-label="Application returned" className="mb-4 rounded-xl border border-red-200 bg-red-50/70 p-4">
@@ -18,7 +17,7 @@ export default function ReturnedBanner({ rejection, items, onGo }) {
         <div className="min-w-0 flex-1">
           <h3 className="text-sm font-extrabold text-red-900">Your application needs a few corrections</h3>
           <p className="mt-0.5 text-xs leading-5 text-red-900/80">
-            It was returned at the {stage}{formatDate(rejection.rejected_at) && ` on ${formatDate(rejection.rejected_at)}`}.
+            It was returned by our team{formatDate(rejection.rejected_at) && ` on ${formatDate(rejection.rejected_at)}`}.
             Fix the items below (or confirm they are correct), then resubmit. {open === 0
               ? 'Everything is handled: review and resubmit.'
               : `${open} of ${items.length} still to do.`}

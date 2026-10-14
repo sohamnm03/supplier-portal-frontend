@@ -9,12 +9,15 @@ import { currencies, relationshipManagers } from '../../data/mockData'
 import { checkPanExists, lookupPincode, verifyGstin } from '../../api/vendorApi'
 import useDuplicateCheck from '../../hooks/useDuplicateCheck'
 import { PIN_PATTERN } from '../../hooks/usePincodeAutofill'
+import { useFlag } from '../../context/flags-context'
 
 const PAN_PATTERN = /^[A-Z]{5}[0-9]{4}[A-Z]$/
 const GSTIN_PATTERN = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/
 
 export default function VendorInformation({ register, errors, watch, setValue, setError, clearErrors, lockedFields = [], disabled = false, gstLookup, setGstLookup, onGstLookupSuccess, onPanTakenChange, onPanCheckingChange, takenRef }) {
   const msmeStatus = watch('msmeStatus')
+  // An Udyam number the reviewer flagged must be editable whatever the MSME status currently says.
+  const udyamFlagged = Boolean(useFlag('udyamNumber'))
   const pan = watch('pan')?.trim().toUpperCase() || ''
   const gstin = watch('gstin')?.trim().toUpperCase() || ''
   // gstLookup (kept by the page, so it survives moving between steps) holds the GSTIN that was verified: set by a
@@ -215,10 +218,11 @@ export default function VendorInformation({ register, errors, watch, setValue, s
           options={['Registered', 'Not registered', 'Not applicable']}
           required
         />
-        {msmeStatus === 'Registered' && (
+        {(msmeStatus === 'Registered' || udyamFlagged) && (
           <Input
             label="MSME / Udyam registration number"
             name="udyamNumber"
+            maxLength={30}
             register={register}
             error={errors.udyamNumber}
             required

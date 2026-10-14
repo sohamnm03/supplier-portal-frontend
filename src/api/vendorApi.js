@@ -104,6 +104,8 @@ export async function loginVendor(email, password) {
           : body?.error || body?.message || 'Unable to sign in. Please try again.',
     )
     error.status = response.status
+    error.code = body?.code
+    error.body = body
     throw error
   }
 

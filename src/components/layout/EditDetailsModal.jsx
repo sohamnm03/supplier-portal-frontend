@@ -7,6 +7,7 @@ import PhoneField from '../common/PhoneField'
 import { joinPhone, phoneRuleFor, splitPhone } from '../../data/countryCodes'
 import usePincodeAutofill from '../../hooks/usePincodeAutofill'
 import { aadhaarDigits, maskAadhaarInput } from '../../utils/formatters'
+import { isCompanyType } from '../../data/vendorTypes'
 import { LOCKED_KEYS, displayProfileValue, isRegisteredMsme, requiredKeys, sameValue, sections, toDraft, toUpdatePayload } from './profileFields'
 
 const fieldBox = 'mt-1 h-8 min-h-8 w-full rounded-md px-2.5 py-1 text-[13px] leading-5'
@@ -129,7 +130,11 @@ export default function EditDetailsModal({ open, profile, onClose, onSent }) {
           </div>
 
           {sections.map(({ title, icon: Icon, fields }) => {
-            const visible = fields.filter(([key]) => key !== 'udyam_number' || isRegisteredMsme(draft) || String(profile.udyam_number ?? '').trim() !== '')
+            const visible = fields.filter(
+              ([key]) =>
+                (key !== 'udyam_number' || isRegisteredMsme(draft) || String(profile.udyam_number ?? '').trim() !== '') &&
+                (key !== 'cin' || isCompanyType(draft.vendor_type) || String(profile.cin ?? '').trim() !== ''),
+            )
             return (
               <section key={title}>
                 <div className="grid md:grid-cols-2">

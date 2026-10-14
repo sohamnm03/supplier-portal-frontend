@@ -14,6 +14,7 @@ export const vendorRequestSchema = z.object({
   if (!/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(data.pan)) add('pan', 'Enter a valid PAN, e.g. ABCDE1234F')
   if (!/^\d{6}$/.test(data.registeredPostalCode)) add('registeredPostalCode', 'Enter a valid 6-digit PIN code')
   if (data.gstin?.trim() && !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(data.gstin)) add('gstin', 'Enter a valid 15-character GSTIN')
+  if (data.cin?.trim() && !/^[A-Za-z0-9]{21}$/.test(data.cin.trim())) add('cin', 'Enter a valid 21-character CIN')
   if (data.aadhaar?.trim() && !/^[2-9]\d{11}$/.test(data.aadhaar.replace(/\s/g, ''))) add('aadhaar', 'Enter a valid 12-digit Aadhaar number')
   const phoneRule = phoneRuleFor(data.vendorPhoneCode)
   if (data.vendorPhone?.trim() && !phoneRule.pattern.test(data.vendorPhone.replace(/\s/g, ''))) add('vendorPhone', phoneRule.message)

@@ -22,6 +22,7 @@ import { KEY_BY_FORM_FIELD, buildFlags, stepOfFlag } from '../utils/rejectionFie
 import { STAGES } from '../utils/stages'
 import { isValidPhone } from '../data/countryCodes'
 import { documentTypes } from '../data/documentTypes'
+import { isCompanyType } from '../data/vendorTypes'
 import { FlagsContext } from '../context/flags-context'
 import { checkPanExists, getMyDocuments, saveOnboardingDraft, submitOnboarding, uploadVendorDocuments } from '../api/vendorApi'
 
@@ -74,6 +75,13 @@ export default function VendorRequestPage() {
 
   const values = watch()
   const contactReady = isValidPhone(values.vendorPhoneCode, values.vendorPhone)
+
+  // CIN is only for incorporated entities: one left over from a vendor type the vendor has since changed is dropped, unless the
+  // reviewer flagged it (then the field stays and the vendor can fix it).
+  useEffect(() => {
+    if (values.cin && !isCompanyType(values.vendorType) && !flagDefs.fields.cin) setValue('cin', '', { shouldDirty: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [values.vendorType])
   const currentFields = STEP_FIELDS[step - 1] || []
   const errorCount = currentFields.filter((name) => errors[name]).length
   const declarationsComplete = values.accurateDeclaration && values.termsDeclaration
@@ -396,7 +404,7 @@ export default function VendorRequestPage() {
                 {step !== 4 && (
                   <div className="z-20 mt-3 shrink-0 rounded-lg border border-slate-300 bg-slate-50 p-2">
                     <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
-                      <Button type="button" variant="ghost" onClick={saveDraft} disabled={saving}>
+                      <Button type="button" variant="secondary" className="px-6" onClick={saveDraft} disabled={saving}>
                         {saving ? <Loader /> : <Save size={17} />} Save draft
                       </Button>
                       <div className="flex flex-col-reverse gap-2 sm:flex-row">

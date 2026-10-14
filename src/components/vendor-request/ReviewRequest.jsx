@@ -7,6 +7,11 @@ import { joinPhone } from '../../data/countryCodes'
 import { documentTypes } from '../../data/documentTypes'
 import { displayValue, maskAccountNumber } from '../../utils/formatters'
 import TermsPolicyModal from './TermsPolicyModal'
+import { isCompanyType } from '../../data/vendorTypes'
+
+// Udyam applies to a registered MSME, CIN to an incorporated entity (or one that already has a value): no empty rows for the rest.
+const appliesToVendor = (key, values) =>
+  (key !== 'udyamNumber' || values.msmeStatus === 'Registered') && (key !== 'cin' || isCompanyType(values.vendorType) || Boolean(values.cin))
 
 const sections = [
   {
@@ -70,7 +75,7 @@ export default function ReviewRequest({ values, documents = {}, existingDocument
               </button>
             </div>
             <dl className={`grid grid-cols-1 gap-x-5 gap-y-3 p-4 sm:grid-cols-2 ${section.wide ? 'xl:grid-cols-4' : ''}`}>
-              {section.fields.map(([label, key, masked]) => (
+              {section.fields.filter(([, key]) => appliesToVendor(key, values)).map(([label, key, masked]) => (
                 <div key={key} className={key.includes('Address') ? 'sm:col-span-2' : ''}>
                   <dt className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">{label}</dt>
                   <dd className="mt-0.5 break-words text-xs font-semibold text-slate-800">

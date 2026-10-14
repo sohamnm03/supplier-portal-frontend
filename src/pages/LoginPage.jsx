@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { Navigate, useNavigate } from 'react-router-dom'
-import { ArrowRight, BadgeCheck, Building2, Check, Eye, EyeOff, Landmark, RefreshCw, ShieldCheck } from 'lucide-react'
+import { Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { AlertCircle, ArrowRight, BadgeCheck, Building2, Check, Eye, EyeOff, Landmark, RefreshCw, ShieldCheck } from 'lucide-react'
 import AppLogo from '../components/common/AppLogo'
 import Loader from '../components/common/Loader'
 import SignupModal from '../components/auth/SignupModal'
@@ -29,8 +29,12 @@ function createCaptcha() {
 export default function LoginPage() {
   const { login, logout, updateProfile, isAuthenticated, stage } = useAuth()
   const navigate = useNavigate()
-  const [signupOpen, setSignupOpen] = useState(false)
-  const [email, setEmail] = useState('')
+  const location = useLocation()
+  // A rejected vendor can come back here from their status page to start a new application.
+  const [signupOpen, setSignupOpen] = useState(Boolean(location.state?.startNewApplication))
+  // Set when the login was right but the application was rejected: the reasons, and a way to start again.
+  const [rejected, setRejected] = useState(null)
+  const [email, setEmail] = useState(location.state?.email || '')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [captchaCode, setCaptchaCode] = useState(createCaptcha)
@@ -64,6 +68,7 @@ export default function LoginPage() {
     }
 
     setError('')
+    setRejected(null)
     setCaptchaError('')
     setSubmitting(true)
     try {
@@ -76,9 +81,14 @@ export default function LoginPage() {
       navigate(homeForStage(profile.stage), { replace: true })
     } catch (requestError) {
       logout()
-      setError(requestError?.status === 401
-        ? 'Invalid email or password.'
-        : requestError?.message || 'Unable to connect to the server. Please try again.')
+      if (requestError?.code === 'application_rejected') {
+        // No session for a rejected application: the vendor is told why instead, and can start a new one.
+        setRejected(true)
+      } else {
+        setError(requestError?.status === 401
+          ? 'Invalid email or password.'
+          : requestError?.message || 'Unable to connect to the server. Please try again.')
+      }
       refreshCaptcha()
     } finally {
       setSubmitting(false)
@@ -88,8 +98,12 @@ export default function LoginPage() {
   // After signing up, drop the vendor at the login form with their email filled in.
   const handleSignedUp = (signedUpEmail) => {
     setSignupOpen(false)
+    // The new account replaces the rejected application, so its message and any earlier error no longer apply.
+    setRejected(null)
+    setError('')
     setEmail(signedUpEmail)
     setPassword('')
+    refreshCaptcha()
     setTimeout(() => document.getElementById('login-password')?.focus(), 0)
   }
 
@@ -154,7 +168,7 @@ export default function LoginPage() {
             <div className="vendor-login__field">
               <label htmlFor="login-email">Email address</label>
               <input id="login-email" type="email" autoComplete="email" placeholder="you@company.com"
-                value={email} onChange={(event) => setEmail(event.target.value)} aria-invalid={Boolean(error)} required />
+                value={email} onChange={(event) => { setEmail(event.target.value); setRejected(null) }} aria-invalid={Boolean(error)} required />
             </div>
 
             <div className="vendor-login__field">
@@ -206,13 +220,23 @@ export default function LoginPage() {
 
             {error && <div className="vendor-login__error" role="alert">{error}</div>}
 
+            {rejected && (
+              <div className="vendor-login__error" role="alert">
+                <p className="flex items-center gap-1.5 font-bold"><AlertCircle size={14} /> Your application was not approved</p>
+                <p className="mt-1.5 font-medium">This application is closed, and the reason was sent to your email. You can apply again with a new application.</p>
+                <button type="button" onClick={() => setSignupOpen(true)} className="mt-2 font-bold underline underline-offset-2">
+                  Start a new application
+                </button>
+              </div>
+            )}
+
             <button type="submit" className="vendor-login__secondary" disabled={submitting}>
               {submitting ? <><Loader /> Logging in…</> : <>Login <ArrowRight size={17} /></>}
             </button>
           </div>
         </form>
       </section>
-      <SignupModal open={signupOpen} onClose={() => setSignupOpen(false)} onSignedUp={handleSignedUp} />
+      <SignupModal open={signupOpen} onClose={() => setSignupOpen(false)} onSignedUp={handleSignedUp} initialEmail={email.trim()} />
     </main>
   )
 }
