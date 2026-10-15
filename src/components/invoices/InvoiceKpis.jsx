@@ -1,7 +1,8 @@
 import { useMemo } from 'react'
 import { statusDetails } from '../../utils/invoiceStatus'
 
-const DOT = { Extracted: 'bg-emerald-600', Processing: 'bg-amber-600', Ready: 'bg-blue-600', Failed: 'bg-red-500', Rejected: 'bg-red-500' }
+// The same dot colours as the status summary in the enterprise app (approved green, in-progress amber, problems red, other blue).
+const DOT = { Approved: '#1f7c64', Processing: '#936716', 'Needs correction': '#bf4252', Failed: '#bf4252', Rejected: '#bf4252', Ready: '#316fbb' }
 
 // Total plus a count per status that actually has invoices, biggest first.
 export default function InvoiceKpis({ invoices }) {
@@ -20,7 +21,7 @@ export default function InvoiceKpis({ invoices }) {
       <span><b className="font-bold text-[#0b2b52]">{invoices.length}</b> Total Invoices</span>
       {summary.map(([label, count]) => (
         <span key={label} className="inline-flex items-center gap-1.5">
-          <i className={`size-1.5 rounded-full ${DOT[label] || 'bg-slate-400'}`} />
+          <i className="size-1.5 rounded-full" style={{ backgroundColor: DOT[label] || '#316fbb' }} />
           <span><b className="font-bold text-[#0b2b52]">{count}</b> {label}</span>
         </span>
       ))}

@@ -251,6 +251,24 @@ export async function extractInvoice(vendorId, file) {
   return body
 }
 
+// Why a returned invoice needs correcting (or why a rejected one was rejected); null when there is nothing to show.
+export async function getInvoiceReturnReasons(invoiceId) {
+  const response = await authFetch(`/invoices/${invoiceId}/return-reasons`)
+  const body = await response.json().catch(() => null)
+  if (!response.ok) throw new Error(body?.error || body?.message || 'Unable to load the correction details.')
+  return body
+}
+
+// Uploads the corrected file for a returned invoice; the same invoice is overwritten and goes back for approval.
+export async function replaceInvoice(invoiceId, file) {
+  const formData = new FormData()
+  formData.append('invoices', file)
+  const response = await authFetch(`/invoices/${invoiceId}/replace`, { method: 'POST', body: formData })
+  const body = await response.json().catch(() => null)
+  if (!response.ok) throw new Error(body?.error || body?.message || 'Unable to replace the invoice.')
+  return body
+}
+
 // Maps the react-hook-form field names (camelCase) to the backend's
 // vendor table column names (snake_case). The email is fixed at signup, so it is not sent.
 function toVendorPayload(data) {

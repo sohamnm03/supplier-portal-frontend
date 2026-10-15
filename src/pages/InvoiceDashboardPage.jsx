@@ -4,13 +4,14 @@ import PageContainer from '../components/layout/PageContainer'
 import InvoiceUploader from '../components/invoices/InvoiceUploader'
 import InvoiceKpis from '../components/invoices/InvoiceKpis'
 import InvoiceList from '../components/invoices/InvoiceList'
+import ReadFailureModal from '../components/invoices/ReadFailureModal'
 import useInvoiceUploads from '../hooks/useInvoiceUploads'
 import useAuth from '../hooks/useAuth'
 
 export default function InvoiceDashboardPage() {
   const { user } = useAuth()
   const [uploadSignal, setUploadSignal] = useState(0)
-  const { invoices, addFiles, removeInvoice, extractInvoice, error, clearError, loadError, isLoading } = useInvoiceUploads(user?.vendor_id)
+  const { invoices, addFiles, removeInvoice, extractInvoice, error, clearError, loadError, isLoading, reload, readFailures, dismissReadFailures } = useInvoiceUploads(user?.vendor_id)
 
   return (
     <AppShell breadcrumb="Invoices">
@@ -30,8 +31,10 @@ export default function InvoiceDashboardPage() {
             error={loadError}
             uploadedBy={user?.email}
             uploadSignal={uploadSignal}
+            onReplaced={reload}
           />
         </div>
+        <ReadFailureModal failures={readFailures} onClose={dismissReadFailures} onRetry={(files) => { dismissReadFailures(); if (addFiles(files)) setUploadSignal((count) => count + 1) }} />
       </PageContainer>
     </AppShell>
   )

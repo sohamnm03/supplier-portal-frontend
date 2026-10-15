@@ -1,28 +1,38 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
   AlertCircle,
-  ChevronLeft,
-  ChevronRight,
   ExternalLink,
+  Building2,
+  CheckCircle2,
+  Columns2,
   Eye,
   FileText,
   Inbox,
   LoaderCircle,
   RotateCcw,
-  ScanText,
   Search,
   ShieldCheck,
   SlidersHorizontal,
   Trash2,
+  Upload,
   X,
 } from 'lucide-react'
-import { getInvoicePreviewUrl } from '../../api/vendorApi'
+import { getInvoiceReturnReasons, replaceInvoice } from '../../api/vendorApi'
 import { statusDetails } from '../../utils/invoiceStatus'
+import ReplaceInvoiceModal from './ReplaceInvoiceModal'
+import InvoicePagination from './InvoicePagination'
+import { CompareOverlay, loadInvoicePdfUrl, pdfSrc } from './InvoiceCompare'
 import SortableHeaderCell from '../../utils/SortableHeaderCell'
 import { nextSortState, sortRows } from '../../utils/tableSort'
 
-const PAGE_SIZE = 5
+// The global `button { font: inherit }` rule beats Tailwind's font utilities (they are layered), so button text sizes are set inline.
+// Table links are buttons too, so they need the same inline sizing.
+const LINK_XS = { fontSize: '0.75rem', lineHeight: '1rem', fontWeight: 400 }
+const LINK_XS_BOLD = { fontSize: '0.75rem', lineHeight: '1rem', fontWeight: 700 }
+const BTN_XS_BOLD = { fontSize: '0.75rem', lineHeight: '1rem', fontWeight: 600 }
+const BTN_11_SEMI = { fontSize: '0.6875rem', lineHeight: '1rem', fontWeight: 600 }
+
 
 const rawItems = (invoice) => {
   const value = invoice.mainLineItemData ?? invoice.main_line_item_data ?? invoice.line_items ?? invoice.line_item_data
@@ -109,14 +119,22 @@ function matchesAdvanced(invoice, { dateFrom, dateTo, minAmount, maxAmount }) {
   return true
 }
 
-export default function InvoiceList({ invoices, onRemove, onExtract, isLoading = false, error = '', uploadedBy = '', uploadSignal = 0 }) {
+export default function InvoiceList({ invoices, onRemove, onExtract, isLoading = false, error = '', uploadedBy = '', uploadSignal = 0, onReplaced = async () => [] }) {
+  const [replacing, setReplacing] = useState(null)
+  // The invoice whose vendor details are open (from the vendor name in the table).
+  const [vendorInfo, setVendorInfo] = useState(null)
+  const [replaceBusy, setReplaceBusy] = useState(false)
+  const [replaceError, setReplaceError] = useState('')
+  // After a successful replace from the popup: the refreshed invoice, shown once the user chooses to look at it.
+  const [replacedInvoice, setReplacedInvoice] = useState(null)
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('all')
-  const [sourceFilter, setSourceFilter] = useState('all')
+  const [sourceFilter, setSourceFilter] = useState('vendor')
   const [advanced, setAdvanced] = useState(EMPTY_ADVANCED)
   const [filterOpen, setFilterOpen] = useState(false)
   const filterRef = useRef(null)
   const [page, setPage] = useState(1)
+  const [rowsPerPage, setRowsPerPage] = useState(5)
   const [sort, setSort] = useState(null)
   const [preview, setPreview] = useState(null)
   const extractingInvoice = invoices.find((invoice) => invoice.extractionStatus === 'extracting')
@@ -164,7 +182,7 @@ export default function InvoiceList({ invoices, onRemove, onExtract, isLoading =
     <SortableHeaderCell label={label} className={className} align={align} active={sort?.key === key} direction={sort?.direction} onSort={() => setSort((current) => nextSortState(current, key))} />
   )
 
-  useEffect(() => setPage(1), [filter, search, sourceFilter, advanced, sort])
+  useEffect(() => setPage(1), [filter, search, sourceFilter, advanced, sort, rowsPerPage])
 
   // After an upload, jump to "Uploaded by Me" so the new invoice is visible right away.
   useEffect(() => {
@@ -187,9 +205,9 @@ export default function InvoiceList({ invoices, onRemove, onExtract, isLoading =
       document.removeEventListener('keydown', close)
     }
   }, [filterOpen])
-  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const pageCount = Math.max(1, Math.ceil(filtered.length / rowsPerPage))
   const currentPage = Math.min(page, pageCount)
-  const visible = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+  const visible = filtered.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage)
 
   const closePreview = () => setPreview((current) => {
     if (current?.url?.startsWith('blob:') && current.invoice?.source !== 'local') URL.revokeObjectURL(current.url)
@@ -203,29 +221,7 @@ export default function InvoiceList({ invoices, onRemove, onExtract, isLoading =
         setPreview({ invoice, loading: false, url: invoice.url, error: '' })
         return
       }
-      const sourceUrl = await getInvoicePreviewUrl(invoice.blobUrl || invoice.blob_url)
-      // Load the file ourselves and re-serve it as an in-memory PDF; otherwise the storage link's
-      // "attachment" headers make the browser download the file instead of showing it in the iframe.
-      let response
-      try {
-        response = await fetch(sourceUrl)
-      } catch {
-        // Storage blocks cross-origin reads (CORS): retry through the same-origin proxy.
-        try {
-          response = await fetch(`/blob-proxy?u=${encodeURIComponent(sourceUrl)}`)
-        } catch {
-          response = null
-        }
-      }
-      if (!response) {
-        setPreview({ invoice, loading: false, url: sourceUrl, error: '' })
-        return
-      }
-      if (!response.ok) throw new Error('The invoice file could not be found. It may not have been uploaded properly.')
-      const buffer = await response.arrayBuffer()
-      const isPdf = new TextDecoder().decode(buffer.slice(0, 1024)).includes('%PDF-')
-      if (!buffer.byteLength || !isPdf) throw new Error('This invoice file is empty or is not a valid PDF, so it cannot be previewed.')
-      const url = URL.createObjectURL(new Blob([buffer], { type: 'application/pdf' }))
+      const url = await loadInvoicePdfUrl(invoice)
       setPreview({ invoice, loading: false, url, error: '' })
     } catch (previewError) {
       const message = previewError instanceof TypeError ? 'The invoice document could not be loaded. Please try again later.' : previewError?.message
@@ -233,17 +229,68 @@ export default function InvoiceList({ invoices, onRemove, onExtract, isLoading =
     }
   }
 
+  // Replacing from inside the invoice popup: the popup stays open with a spinner until the invoice has been read again
+  // and its details (and document) have been overwritten, then shows the new version.
+  const replaceFromPopup = async (invoice, file) => {
+    setReplaceBusy(true)
+    setReplaceError('')
+    try {
+      await replaceInvoice(invoice.id, file)
+      const fresh = (await onReplaced()).find((item) => item.id === invoice.id)
+      setReplacedInvoice(fresh ?? invoice)
+    } catch (e) {
+      setReplaceError(e?.message || 'Unable to replace the invoice.')
+    } finally {
+      setReplaceBusy(false)
+    }
+  }
+  // "View updated invoice": show the overwritten details in the same popup.
+  const viewReplaced = async () => {
+    const fresh = replacedInvoice
+    setReplacedInvoice(null)
+    if (fresh) await openPreview(fresh)
+  }
+  // The replaced invoice is waiting for approval again, so it is under Processing (in Uploaded by Me).
+  const showReplacedInvoice = () => {
+    setSourceFilter('vendor')
+    setFilter('processing')
+    setSearch('')
+    setAdvanced(EMPTY_ADVANCED)
+    setPage(1)
+  }
+  // "Done": close the popup and show the invoice in its new place.
+  const finishReplace = () => {
+    setReplacedInvoice(null)
+    closePreview()
+    showReplacedInvoice()
+  }
+
+  const emptyCopy = hasCriteria
+    ? { title: 'No matching invoices', detail: 'Nothing matches your search and filters right now. Try adjusting them, or use Reset to start over.' }
+    : filter === 'correction'
+      ? { title: 'Nothing needs correction', detail: 'Invoices sent back to you for correction will show up here.' }
+      : filter === 'processing'
+        ? { title: 'Nothing is processing', detail: 'Invoices waiting for approval will show up here.' }
+        : filter === 'approved'
+          ? { title: 'No approved invoices', detail: 'Invoices that complete approval will show up here.' }
+          : filter === 'rejected'
+            ? { title: 'No rejected invoices', detail: 'Invoices that were rejected will show up here.' }
+              : { title: 'No invoices found', detail: 'There are no invoices to show for this view.' }
+
+  // Invoices sent back to the vendor, within the current Uploaded by tab.
+  const correctionCount = invoices.filter((invoice) => statusDetails(invoice).filter === 'correction' && (sourceFilter === 'all' || uploaderType(invoice) === sourceFilter)).length
+
   const filters = [
     ['all', 'All Status'],
-    ['ready', 'Ready'],
     ['processing', 'Processing'],
-    ['extracted', 'Extracted'],
-    ['failed', 'Failed'],
+    ['correction', 'Needs correction'],
+    ['approved', 'Approved'],
+    ['rejected', 'Rejected'],
   ]
 
   return (
     <>
-      <section className={`overflow-hidden rounded-xl border border-[#dce6f1] bg-white shadow-[0_4px_16px_rgba(40,83,130,0.04)] ${filterOpen ? 'min-h-[440px]' : ''}`}>
+      <section className={`shrink-0 overflow-hidden rounded-xl border border-[#dce6f1] bg-white shadow-[0_4px_16px_rgba(40,83,130,0.04)] ${filterOpen ? 'min-h-[440px]' : ''}`}>
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 pb-0 pt-4 sm:px-5">
           <div className="flex items-center gap-2">
             <h2 className="text-[13px] font-extrabold text-[#0b2b52]">Invoice Inbox</h2>
@@ -265,6 +312,7 @@ export default function InvoiceList({ invoices, onRemove, onExtract, isLoading =
           {filters.map(([value, label]) => (
             <button key={value} type="button" onClick={() => setFilter(value)} className={`shrink-0 border-b-2 px-0.5 py-2.5 transition ${filter === value ? 'border-[#1769e8] text-[#1769e8]' : 'border-transparent text-[#52708f] hover:text-[#1769e8]'}`}>
               <span className={filter === value ? 'font-bold' : 'font-medium'}>{label}</span>
+              {value === 'correction' && correctionCount > 0 && <span className="ml-1.5 inline-block min-w-[17px] rounded-full bg-[#bf4252] px-[5px] text-center align-middle text-[10.5px] font-bold leading-[17px] text-white">{correctionCount}</span>}
             </button>
           ))}
         </div>
@@ -276,9 +324,9 @@ export default function InvoiceList({ invoices, onRemove, onExtract, isLoading =
             <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by vendor, invoice no. or id..." className="h-8 w-full rounded-full border border-[#d5e1ed] bg-white pl-9 pr-3 text-xs text-[#29415f] outline-none transition placeholder:text-[#64809e] focus:border-[#1769e8] focus:ring-2 focus:ring-blue-100" />
           </label>
           <div className="flex h-8 items-center gap-2">
-            <span className="rounded-md border border-[#bfd2e8] bg-white px-2.5 py-1.5 text-[10px] font-bold text-[#29466a]">{filtered.length} total</span>
+            <span className="rounded-md border border-[#b9d3ef] bg-white px-2.5 py-1.5 text-[10px] font-bold text-[#29466a]">{filtered.length} total</span>
             <div ref={filterRef} className="relative text-xs">
-              <button type="button" title="Filter invoices" aria-label="Filter invoices" aria-expanded={filterOpen} onClick={() => setFilterOpen((open) => !open)} className={`relative grid size-8 place-items-center rounded-md border text-[#1769e8] transition ${filterOpen || activeAdvancedCount ? 'border-[#1769e8] bg-blue-50' : 'border-[#bfd2e8] bg-white hover:bg-blue-50'}`}>
+              <button type="button" title="Filter invoices" aria-label="Filter invoices" aria-expanded={filterOpen} onClick={() => setFilterOpen((open) => !open)} className={`relative grid size-8 place-items-center rounded-md border text-[#1769e8] transition ${filterOpen || activeAdvancedCount ? 'border-[#1769e8] bg-blue-50' : 'border-[#bfd2e8] bg-white hover:bg-[#eaf3ff]'}`}>
                 <SlidersHorizontal size={14} />
                 {activeAdvancedCount > 0 && <span className="absolute -right-1.5 -top-1.5 grid size-4 place-items-center rounded-full bg-[#1769e8] text-[9px] font-bold text-white">{activeAdvancedCount}</span>}
               </button>
@@ -300,7 +348,7 @@ export default function InvoiceList({ invoices, onRemove, onExtract, isLoading =
               )}
             </div>
             {hasCriteria && (
-              <button type="button" onClick={resetFilters} title="Reset search, filters and sorting" className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border border-[#bfd2e8] bg-white px-2.5 py-[5px] text-[#29466a] transition hover:bg-blue-50">
+              <button type="button" onClick={resetFilters} title="Reset search, filters and sorting" className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border border-[#b9d3ef] bg-white px-2.5 py-[5px] text-[#29466a] transition hover:bg-[#eaf3ff]">
                 <RotateCcw size={12} />
                 <span className="text-[11px] font-semibold">Reset</span>
               </button>
@@ -313,7 +361,7 @@ export default function InvoiceList({ invoices, onRemove, onExtract, isLoading =
         ) : error ? (
           <div role="alert" className="m-5 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-4 text-sm font-semibold text-red-800"><AlertCircle size={18} /> {error}</div>
         ) : invoices.length === 0 ? (
-          <EmptyState />
+          <EmptyState title="No invoices uploaded yet" detail="Add PDF invoices above and they will appear here." />
         ) : (
           <>
             <div className="overflow-x-auto">
@@ -336,9 +384,9 @@ export default function InvoiceList({ invoices, onRemove, onExtract, isLoading =
                     const status = statusDetails(invoice)
                     const canPreview = invoice.source === 'api' || Boolean(invoice.url)
                     return (
-                      <tr key={invoice.id} className="transition hover:bg-blue-50/35">
+                      <tr key={invoice.id} className="transition hover:bg-[#eaf3ff]/35">
                         <td className="px-5 py-3 align-middle">
-                          <p className="max-w-64 truncate text-xs font-bold text-[#3d5a80]">{vendorName(invoice)}</p>
+                          <button type="button" title="View vendor details" onClick={() => setVendorInfo(invoice)} className="block max-w-64 truncate text-left text-xs font-bold text-[#3d5a80] transition hover:text-[#1769e8] hover:underline" style={LINK_XS_BOLD}>{vendorName(invoice)}</button>
                           {vendorGstin(invoice) && (
                             <p className="mt-1 flex items-center gap-1 text-[9px] font-medium tracking-[0.04em] text-[#4a7ab5]">
                               GST: {vendorGstin(invoice)}
@@ -347,7 +395,11 @@ export default function InvoiceList({ invoices, onRemove, onExtract, isLoading =
                           )}
                         </td>
                         <td className="max-w-40 truncate px-4 py-3 text-xs text-[#102a4c]">{uploadedByLabel(invoice, uploadedBy)}</td>
-                        <td className="px-4 py-3 text-xs text-[#102a4c]">{display(invoiceNumber(invoice))}</td>
+                        <td className="px-4 py-3 text-xs text-[#102a4c]">
+                          {canPreview
+                            ? <button type="button" title="View invoice" onClick={() => openPreview(invoice)} className="text-left text-xs text-[#102a4c] transition hover:text-[#1769e8] hover:underline" style={LINK_XS}>{display(invoiceNumber(invoice))}</button>
+                            : display(invoiceNumber(invoice))}
+                        </td>
                         <td className="whitespace-nowrap px-4 py-3 text-xs text-[#102a4c]">{dateValue(pick(invoice, ['invoice_date']))}</td>
                         <td className="whitespace-nowrap px-4 py-3 text-xs text-[#102a4c]">{dateValue(pick(invoice, ['due_date']))}</td>
                         <td className="px-4 py-3 text-xs text-[#102a4c]">{display(pick(invoice, ['payment_term', 'payment_terms']))}</td>
@@ -355,9 +407,12 @@ export default function InvoiceList({ invoices, onRemove, onExtract, isLoading =
                         <td className="px-4 py-3"><span className={`inline-flex rounded-md px-2.5 py-1 text-[10px] font-bold ${status.tone}`}>•&nbsp; {status.label}</span></td>
                         <td className="px-5 py-3">
                           <div className="flex items-center justify-center gap-1.5">
+                            {/* The same actions on every row of a tab, in the same places; Replace is greyed out unless the invoice needs correction. */}
                             <ActionButton title={canPreview ? 'View invoice' : 'Preview unavailable'} disabled={!canPreview} onClick={() => openPreview(invoice)}><Eye size={15} /></ActionButton>
-                            {invoice.source === 'local' && invoice.extractionStatus === 'failed' && <ActionButton title="Retry extraction" onClick={() => onExtract(invoice.id)}><ScanText size={14} /></ActionButton>}
-                            {invoice.source === 'local' && <ActionButton title="Remove invoice" danger disabled={['queued', 'extracting'].includes(invoice.extractionStatus)} onClick={() => onRemove(invoice.id)}><Trash2 size={14} /></ActionButton>}
+                            {/* Replace only appears where an invoice can need correcting: All Status and Needs correction. */}
+                            {(filter === 'all' || filter === 'correction') && (
+                              <ActionButton title={invoice.status === 'Returned to Vendor' ? 'Correct and replace invoice' : 'Replace invoice (only when it needs correction)'} disabled={invoice.status !== 'Returned to Vendor'} onClick={() => setReplacing(invoice)}><Upload size={14} /></ActionButton>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -366,21 +421,16 @@ export default function InvoiceList({ invoices, onRemove, onExtract, isLoading =
                 </tbody>
               </table>
             </div>
-            {!filtered.length && <div className="px-6 py-14 text-center text-xs text-slate-500">No invoices match this search or status.</div>}
+            {!filtered.length && <EmptyState title={emptyCopy.title} detail={emptyCopy.detail} />}
           </>
         )}
 
-        <div className="flex items-center justify-between border-t border-[#dfe7f0] bg-[#fbfcfe] px-4 py-3 text-[10px] font-semibold text-[#425e7d] sm:px-5">
-          <span>Page {currentPage} of {pageCount} — {filtered.length} total</span>
-          <div className="flex items-center gap-2">
-            <span className="rounded-md border border-[#d5e1ed] bg-white px-3 py-2">{PAGE_SIZE}</span>
-            <button type="button" disabled={currentPage <= 1} onClick={() => setPage((value) => value - 1)} className="inline-flex items-center gap-1 rounded-md border border-[#d5e1ed] bg-white px-2.5 py-2 disabled:text-slate-300"><ChevronLeft size={12} /> Prev</button>
-            <button type="button" disabled={currentPage >= pageCount} onClick={() => setPage((value) => value + 1)} className="inline-flex items-center gap-1 rounded-md border border-[#d5e1ed] bg-white px-2.5 py-2 disabled:text-slate-300">Next <ChevronRight size={12} /></button>
-          </div>
-        </div>
+        <InvoicePagination total={filtered.length} page={currentPage} rowsPerPage={rowsPerPage} onPageChange={setPage} onRowsPerPageChange={setRowsPerPage} />
       </section>
 
-      <InvoiceDetailModal preview={preview} onClose={closePreview} />
+      {vendorInfo && <VendorInfoModal invoice={vendorInfo} onClose={() => setVendorInfo(null)} />}
+      <InvoiceDetailModal preview={preview} onClose={replacedInvoice ? finishReplace : closePreview} onReplace={replaceFromPopup} replaceBusy={replaceBusy} replaceError={replaceError} clearReplaceError={() => setReplaceError('')} replaceDone={Boolean(replacedInvoice)} onViewReplaced={viewReplaced} onFinishReplace={finishReplace} />
+      {replacing && <ReplaceInvoiceModal invoice={replacing} onClose={() => setReplacing(null)} onReplaced={onReplaced} onFinished={() => { setReplacing(null); showReplacedInvoice() }} />}
       <ExtractionProgressModal invoice={extractingInvoice} />
     </>
   )
@@ -426,23 +476,55 @@ function ExtractionProgressModal({ invoice }) {
 }
 
 function ActionButton({ children, title, onClick, disabled = false, danger = false }) {
-  return <button type="button" title={title} aria-label={title} disabled={disabled} onClick={onClick} className={`grid size-7 place-items-center rounded-md border bg-white transition disabled:cursor-not-allowed disabled:opacity-35 ${danger ? 'border-red-200 text-red-500 hover:bg-red-50' : 'border-[#bfd2e8] text-[#1769e8] hover:bg-blue-50'}`}>{children}</button>
+  return <button type="button" title={title} aria-label={title} disabled={disabled} onClick={onClick} className={`grid size-7 place-items-center rounded-md border bg-white transition disabled:cursor-not-allowed disabled:border-[#dce6f1] disabled:text-[#9fb3c8] disabled:opacity-60 disabled:hover:bg-white ${danger ? 'border-red-200 text-red-500 hover:bg-red-50' : 'border-[#bfd2e8] text-[#1769e8] hover:bg-[#eaf3ff]'}`}>{children}</button>
 }
 
-function EmptyState() {
+// The same empty state as the enterprise tables: an inbox icon with a title and a line of detail.
+function EmptyState({ title, detail }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-2 px-6 py-16 text-center">
-      <span className="grid size-11 place-items-center rounded-full bg-blue-50 text-[#7e9cbb]"><Inbox size={20} /></span>
-      <p className="text-sm font-bold text-[#102a4c]">No invoices uploaded yet</p>
-      <p className="text-xs text-slate-500">Add PDF invoices above and they will appear here.</p>
+    <div className="flex min-h-[200px] flex-col items-center justify-center gap-2.5 px-6 py-7 text-center text-[#8a9bb0]">
+      <Inbox size={26} strokeWidth={1.5} />
+      <p className="text-[13px] font-bold text-[#45617d]">{title}</p>
+      <p className="max-w-[360px] text-xs text-[#66768b]">{detail}</p>
     </div>
   )
 }
 
-function InvoiceDetailModal({ preview, onClose }) {
+function InvoiceDetailModal({ preview, onClose, onReplace, replaceBusy = false, replaceError = '', clearReplaceError = () => {}, replaceDone = false, onViewReplaced = () => {}, onFinishReplace = () => {} }) {
+  const replaceInput = useRef(null)
+  // The corrected file the user has picked but not yet confirmed.
+  const [staged, setStaged] = useState(null)
+  const [compareOpen, setCompareOpen] = useState(false)
+  const stagedInvoiceId = preview?.invoice?.id
+  useEffect(() => { setStaged(null); setCompareOpen(false) }, [stagedInvoiceId])
+  const stageFile = (file) => {
+    clearReplaceError()
+    if (!['.pdf', '.png', '.jpg', '.jpeg'].some((ext) => file.name.toLowerCase().endsWith(ext))) return onReplaceRejected('Please choose a PDF, PNG or JPG file.')
+    if (file.size > 10 * 1024 * 1024) return onReplaceRejected('The file is larger than 10 MB.')
+    setStaged(file)
+    return undefined
+  }
+  const [stageError, setStageError] = useState('')
+  const onReplaceRejected = (message) => { setStageError(message) }
   const [activeTab, setActiveTab] = useState('overview')
   const [frameLoaded, setFrameLoaded] = useState(false)
+  const [returnInfo, setReturnInfo] = useState(null)
   const previewInvoiceId = preview?.invoice?.id
+  const previewStatus = preview?.invoice?.status
+  // Why the invoice was sent back, or rejected, shown above its details.
+  useEffect(() => {
+    setReturnInfo(null)
+    if (!previewInvoiceId || !['Rejected', 'Returned to Vendor'].includes(previewStatus)) return undefined
+    let ignore = false
+    getInvoiceReturnReasons(previewInvoiceId).then((data) => { if (!ignore) setReturnInfo(data) }).catch(() => {})
+    return () => { ignore = true }
+  }, [previewInvoiceId, previewStatus])
+  const flaggedFields = useMemo(() => new Set(returnInfo?.outcome === 'returned' ? (returnInfo.items ?? []).filter((item) => !item.fixed && item.field_key).map((item) => item.field_key) : []), [returnInfo])
+  // The banner's View button: open the tab the field is on and bring it into view.
+  const viewField = (fieldKey) => {
+    setActiveTab(tabOfField(fieldKey))
+    window.setTimeout(() => document.querySelector(`[data-flagged-field="${fieldKey}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 60)
+  }
   useEffect(() => {
     if (!previewInvoiceId) return undefined
     setActiveTab('overview')
@@ -457,10 +539,11 @@ function InvoiceDetailModal({ preview, onClose }) {
   if (!preview) return null
   const { invoice, loading, url, error } = preview
   const status = statusDetails(invoice)
+  const canReplaceHere = invoice.status === 'Returned to Vendor' && returnInfo?.outcome !== 'rejected'
 
   return createPortal(
     <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-950/50 p-2 sm:p-4" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <section className="flex h-[86dvh] max-h-[calc(100dvh-1rem)] w-full max-w-[1200px] flex-col overflow-hidden rounded-xl bg-white shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="invoice-detail-title">
+      <section className="relative flex h-[86dvh] max-h-[calc(100dvh-1rem)] w-full max-w-[1200px] flex-col overflow-hidden rounded-xl bg-white shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="invoice-detail-title">
         <header className="flex shrink-0 items-center justify-between gap-4 border-b-2 border-[#6aafff] bg-[#eef6ff] px-5 py-3.5">
           <div className="flex min-w-0 items-center gap-3">
             <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-[#e6f1ff] text-[#3a73b8]"><FileText size={18} /></span>
@@ -472,13 +555,35 @@ function InvoiceDetailModal({ preview, onClose }) {
           <button type="button" onClick={onClose} aria-label="Close invoice detail" className="grid size-8 place-items-center rounded-full bg-white/80 text-[#5f7895] transition hover:bg-white hover:text-[#102a4c]"><X size={18} /></button>
         </header>
 
+        {returnInfo && (returnInfo.items?.length > 0 || returnInfo.overall_remark) && (() => {
+          const rejected = returnInfo.outcome === 'rejected'
+          const pending = (returnInfo.items ?? []).filter((item) => !item.fixed)
+          return (
+            <div role="alert" className="shrink-0 border-b border-red-200 bg-red-50 px-5 py-2 text-xs text-red-800">
+              <div className="flex items-center gap-2">
+                <p className="flex items-center gap-2 font-bold"><AlertCircle size={14} className="shrink-0" />{rejected ? 'This invoice was rejected' : 'Sent back for correction'}{!rejected && <span className="font-medium opacity-80">({pending.length} {pending.length === 1 ? 'item' : 'items'})</span>}</p>
+              </div>
+              <div className="mt-1 max-h-24 overflow-y-auto">
+                {pending.map((item) => (
+                  <div key={item.item_id ?? item.reason_label} className="flex items-baseline gap-2.5 py-0.5">
+                    <p className="min-w-0 flex-1"><strong>{item.field_label}:</strong> {item.reason_label}{item.remark ? ` (${item.remark})` : ''}</p>
+                    {!rejected && tabOfField(item.field_key) && <button type="button" onClick={() => viewField(item.field_key)} className="inline-flex h-[22px] shrink-0 items-center gap-1 rounded-full border border-[#b9d3ef] bg-white px-[9px] text-[11px] font-semibold text-[#1265c8] transition hover:border-[#1265c8] hover:bg-[#eaf3ff]" style={BTN_11_SEMI}><Eye size={12} />View</button>}
+                  </div>
+                ))}
+                {returnInfo.overall_remark && <p className="whitespace-pre-wrap py-0.5">{returnInfo.overall_remark}</p>}
+              </div>
+            </div>
+          )
+        })()}
         <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[58%_42%] lg:grid-rows-1 lg:overflow-hidden">
           <div className="flex min-h-[420px] flex-col border-b lg:min-h-0 border-[#dce6f1] lg:border-b-0 lg:border-r">
             <div className="flex shrink-0 gap-5 border-b border-[#dce6f1] px-5 text-xs" role="tablist">
-              {[['overview', 'Overview'], ['amounts', 'Amounts & Line Items']].map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={activeTab === value} onClick={() => setActiveTab(value)} className={`-mb-px border-b-2 py-3 transition ${activeTab === value ? 'border-[#1769e8] text-[#1769e8]' : 'border-transparent text-[#58728e] hover:text-[#1769e8]'}`}><span className={activeTab === value ? 'font-bold' : 'font-medium'}>{label}</span></button>)}
+              {[['overview', 'Overview'], ['amounts', 'Amounts & Line Items']].map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={activeTab === value} onClick={() => setActiveTab(value)} className={`-mb-px border-b-2 py-3 transition ${activeTab === value ? 'border-[#1769e8] text-[#1769e8]' : 'border-transparent text-[#58728e] hover:text-[#1769e8]'}`}><span className={activeTab === value ? 'font-bold' : 'font-medium'}>{label}</span>{[...flaggedFields].some((field) => tabOfField(field) === value) && <span role="img" aria-label="Needs correction" title="Needs correction" className="ml-1.5 inline-block size-[7px] rounded-full bg-red-500 align-middle" />}</button>)}
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
-              {activeTab === 'overview' ? <Overview invoice={invoice} /> : <Amounts invoice={invoice} />}
+              <FlaggedContext.Provider value={flaggedFields}>
+                {activeTab === 'overview' ? <Overview invoice={invoice} /> : <Amounts invoice={invoice} />}
+              </FlaggedContext.Provider>
             </div>
           </div>
 
@@ -489,7 +594,7 @@ function InvoiceDetailModal({ preview, onClose }) {
                 <p className="mt-1 break-words text-xs text-[#59728f]">File: {invoice.name}</p>
               </div>
               {url && !loading && !error && (
-                <a href={url} target="_blank" rel="noopener noreferrer" title="Open in new tab" aria-label="Open in new tab" className="grid size-8 shrink-0 place-items-center rounded-md border border-[#bfd2e8] bg-white text-[#1769e8] transition hover:bg-blue-50">
+                <a href={url} target="_blank" rel="noopener noreferrer" title="Open in new tab" aria-label="Open in new tab" className="grid size-8 shrink-0 place-items-center rounded-md border border-[#b9d3ef] bg-white text-[#1769e8] transition hover:bg-[#eaf3ff]">
                   <ExternalLink size={15} />
                 </a>
               )}
@@ -506,28 +611,89 @@ function InvoiceDetailModal({ preview, onClose }) {
             </div>
           </div>
         </div>
+        {canReplaceHere && (
+          <footer className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-[#dce6f1] bg-[#fbfcfe] px-5 py-3">
+            <input ref={replaceInput} type="file" accept=".pdf,.png,.jpg,.jpeg" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; setStageError(''); if (file) stageFile(file) }} />
+            {staged ? (
+              <>
+                <div className="flex min-w-0 flex-1 items-center gap-3">
+                  <span className="grid size-9 shrink-0 place-items-center rounded-md bg-[#e6f1ff] text-[#3a73b8]"><FileText size={17} /></span>
+                  <div className="min-w-0">
+                    <button type="button" title="Open the new file in a new tab" onClick={() => window.open(URL.createObjectURL(staged), '_blank', 'noopener')} className="block max-w-full truncate text-left text-xs font-semibold text-[#1265c8] hover:underline" style={BTN_XS_BOLD}>{staged.name}</button>
+                    <p className="mt-0.5 text-[11px] text-[#59728f]">{staged.size >= 1048576 ? `${(staged.size / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(staged.size / 1024))} KB`} · Overwriting will replace this invoice's details with the new file.</p>
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <button type="button" onClick={() => setCompareOpen(true)} className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[#b9d3ef] bg-white px-3 text-xs font-semibold text-[#1265c8] transition hover:bg-[#eaf3ff]" style={BTN_XS_BOLD}><Columns2 size={14} /> Compare</button>
+                  <button type="button" onClick={() => replaceInput.current?.click()} className="inline-flex h-8 items-center rounded-md border border-[#b9d3ef] bg-white px-3 text-xs font-semibold text-[#1265c8] transition hover:bg-[#eaf3ff]" style={BTN_XS_BOLD}>Change</button>
+                  <button type="button" onClick={() => { setStaged(null); setStageError('') }} title="Remove file" aria-label="Remove file" className="grid size-8 place-items-center rounded-md border border-[#c9d7e6] bg-white text-[#bf4252] transition hover:bg-[#eaf3ff]"><Trash2 size={14} /></button>
+                  <button type="button" onClick={() => { const file = staged; onReplace(preview.invoice, file) }} className="inline-flex h-8 items-center gap-2 rounded-md bg-[#1265c8] px-3.5 text-xs font-semibold text-white transition hover:bg-[#0f56ab]" style={BTN_XS_BOLD}><Upload size={14} /> Overwrite invoice</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="min-w-0 text-xs">
+                  <p className="font-bold text-[#29466a]">Fixed what was asked? Upload the corrected invoice.</p>
+                  <p className="mt-0.5 text-[11px] text-[#59728f]">You can check the file before it replaces this invoice. PDF, PNG or JPG up to 10 MB.</p>
+                </div>
+                <button type="button" onClick={() => { clearReplaceError(); setStageError(''); replaceInput.current?.click() }} className="inline-flex h-8 shrink-0 items-center gap-2 rounded-md bg-[#1265c8] px-3.5 text-xs font-semibold text-white transition hover:bg-[#0f56ab]" style={BTN_XS_BOLD}><Upload size={14} /> Choose new invoice</button>
+              </>
+            )}
+            {(replaceError || stageError) && <p className="w-full text-xs font-semibold text-red-600">{replaceError || stageError}</p>}
+          </footer>
+        )}
+        {compareOpen && staged && <CompareOverlay currentUrl={url} loading={loading} file={staged} invoiceNumber={display(invoiceNumber(invoice))} onClose={() => setCompareOpen(false)} onOverwrite={() => { setCompareOpen(false); onReplace(preview.invoice, staged) }} />}
+        {replaceBusy && (
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-white/85 backdrop-blur-[1px]" role="status" aria-live="polite">
+            <LoaderCircle size={34} className="animate-spin text-[#1769e8]" />
+            <p className="text-sm font-bold text-[#102a4c]">Replacing your invoice…</p>
+            <p className="max-w-xs text-center text-xs text-[#59728f]">The new file is being read and the invoice details are being updated. Please keep this window open.</p>
+          </div>
+        )}
+        {replaceDone && !replaceBusy && (
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-white px-6 text-center" role="status" aria-live="polite">
+            <span className="grid size-14 place-items-center rounded-full bg-emerald-50 text-emerald-600"><CheckCircle2 size={34} /></span>
+            <p className="text-base font-bold text-[#102a4c]">Invoice replaced successfully</p>
+            <p className="max-w-sm text-xs leading-5 text-[#59728f]">We have read your new file and updated this invoice's details. It has been sent back for approval, so it no longer needs correction.</p>
+            <div className="mt-2 flex items-center gap-2.5">
+              <button type="button" onClick={onViewReplaced} className="inline-flex h-8 items-center rounded-md border border-[#b9d3ef] bg-white px-3.5 text-xs font-semibold text-[#1265c8] transition hover:bg-[#eaf3ff]" style={BTN_XS_BOLD}>View updated invoice</button>
+              <button type="button" onClick={onFinishReplace} className="inline-flex h-8 items-center rounded-md bg-[#1265c8] px-3.5 text-xs font-semibold text-white transition hover:bg-[#0f56ab]" style={BTN_XS_BOLD}>Done</button>
+            </div>
+          </div>
+        )}
       </section>
     </div>,
     document.body,
   )
 }
 
-// Hide the built-in thumbnail sidebar and fit the page to the viewer width; toolbar zoom then works from that baseline.
-const pdfSrc = (url) => (url ? `${url.split('#')[0]}#navpanes=0&pagemode=none&view=FitH` : url)
 
 function DetailSection({ title, children }) {
   return <section className="mb-3.5 rounded-lg border border-[#cfdae7] bg-white px-3.5 py-2.5"><div className="mb-3 flex items-center gap-2 border-b border-[#cfdae7] pb-2"><span className="size-1 rounded-full bg-sky-500" /><h3 className="text-[11px] font-bold uppercase tracking-[0.05em] text-[#526d89]">{title}</h3></div>{children}</section>
 }
-function Field({ label, value, wide = false }) {
-  return <div className={wide ? 'sm:col-span-2' : ''}><p className="text-[11px] font-semibold uppercase tracking-[0.03em] text-[#607a98]">{label}</p><p className="mt-1.5 min-h-5 break-words text-[13px] font-medium leading-5 text-[#102a4c]">{display(value)}</p></div>
+function Field({ label, value, wide = false, fieldKey }) {
+  return <div className={wide ? 'sm:col-span-2' : ''}><Flagged fieldKey={fieldKey}><p className="text-[11px] font-semibold uppercase tracking-[0.03em] text-[#607a98]">{label}</p><p className="mt-1.5 min-h-5 break-words text-[13px] font-medium leading-5 text-[#102a4c]">{display(value)}</p></Flagged></div>
+}
+
+// The fields the reviewer flagged when sending the invoice back (and that are still to be corrected), marked in the detail.
+const FlaggedContext = createContext(new Set())
+const OVERVIEW_FIELDS = new Set(['vendor_name', 'vendor_tax_id', 'vendor_address', 'customer_name', 'customer_tax_id', 'billing_address', 'invoice_number', 'invoice_date', 'due_date', 'payment_term', 'currency'])
+const AMOUNT_FIELDS = new Set(['subtotal', 'total_tax', 'total_amount', 'line_items'])
+const tabOfField = (fieldKey) => (OVERVIEW_FIELDS.has(fieldKey) ? 'overview' : AMOUNT_FIELDS.has(fieldKey) ? 'amounts' : null)
+
+// The red frame sits outside the field (padding and an equal negative margin keep the field where it was).
+function Flagged({ fieldKey, children, className = '' }) {
+  const flagged = useContext(FlaggedContext)
+  if (!fieldKey || !flagged.has(fieldKey)) return className ? <div className={className}>{children}</div> : children
+  return <div data-flagged-field={fieldKey} className={`-m-2 rounded-lg border-[1.5px] border-red-500 bg-red-50/60 p-2 ${className}`}>{children}</div>
 }
 
 function Overview({ invoice }) {
   return (
     <>
-      <DetailSection title="Vendor"><div className="grid gap-4 sm:grid-cols-2"><Field label="Vendor Name" value={vendorName(invoice)} /><Field label="GSTIN" value={vendorGstin(invoice)} /><Field wide label="Address" value={pick(invoice, ['vendor_address', 'supplier_address', 'address'])} /></div></DetailSection>
-      <DetailSection title="Customer / Billing"><div className="grid gap-4 sm:grid-cols-2"><Field label="Customer Name" value={pick(invoice, ['customer_name', 'billing_name', 'buyer_name'])} /><Field label="GSTIN" value={customerGstin(invoice)} /><Field wide label="Address" value={pick(invoice, ['customer_address', 'billing_address', 'buyer_address'])} /></div></DetailSection>
-      <DetailSection title="Invoice / Payment"><div className="grid gap-4 sm:grid-cols-2"><Field label="Invoice No." value={invoiceNumber(invoice)} /><Field label="System Invoice Ref." value={pick(invoice, ['inv_ref_gen'])} /><Field label="Currency" value={pick(invoice, ['currency'], 'INR')} /><Field label="Invoice Date" value={dateValue(pick(invoice, ['invoice_date']))} /><Field label="Due Date" value={dateValue(pick(invoice, ['due_date']))} /><Field label="Payment Term" value={pick(invoice, ['payment_term', 'payment_terms'])} /></div></DetailSection>
+      <DetailSection title="Vendor"><div className="grid gap-4 sm:grid-cols-2"><Field label="Vendor Name" value={vendorName(invoice)} fieldKey="vendor_name" /><Field label="GSTIN" value={vendorGstin(invoice)} fieldKey="vendor_tax_id" /><Field wide label="Address" value={pick(invoice, ['vendor_address', 'supplier_address', 'address'])} fieldKey="vendor_address" /></div></DetailSection>
+      <DetailSection title="Customer / Billing"><div className="grid gap-4 sm:grid-cols-2"><Field label="Customer Name" value={pick(invoice, ['customer_name', 'billing_name', 'buyer_name'])} fieldKey="customer_name" /><Field label="GSTIN" value={customerGstin(invoice)} fieldKey="customer_tax_id" /><Field wide label="Address" value={pick(invoice, ['customer_address', 'billing_address', 'buyer_address'])} fieldKey="billing_address" /></div></DetailSection>
+      <DetailSection title="Invoice / Payment"><div className="grid gap-4 sm:grid-cols-2"><Field label="Invoice No." value={invoiceNumber(invoice)} fieldKey="invoice_number" /><Field label="System Invoice Ref." value={pick(invoice, ['inv_ref_gen'])} /><Field label="Currency" value={pick(invoice, ['currency'], 'INR')} fieldKey="currency" /><Field label="Invoice Date" value={dateValue(pick(invoice, ['invoice_date']))} fieldKey="invoice_date" /><Field label="Due Date" value={dateValue(pick(invoice, ['due_date']))} fieldKey="due_date" /><Field label="Payment Term" value={pick(invoice, ['payment_term', 'payment_terms'])} fieldKey="payment_term" /></div></DetailSection>
     </>
   )
 }
@@ -547,13 +713,13 @@ function Amounts({ invoice }) {
     <>
       <DetailSection title="Amounts">
         <div className="grid gap-3 sm:grid-cols-3">
-          <AmountTile label="Sub Total" value={amount(pick(invoice, ['sub_total', 'subtotal', 'taxable_amount'], null), currency)} />
-          <AmountTile label="Total Tax" value={amount(pick(invoice, ['total_tax', 'tax_amount'], null), currency)} />
-          <AmountTile label="Total Amount" value={amount(totalValue(invoice), currency)} highlight />
+          <AmountTile label="Sub Total" fieldKey="subtotal" value={amount(pick(invoice, ['sub_total', 'subtotal', 'taxable_amount'], null), currency)} />
+          <AmountTile label="Total Tax" fieldKey="total_tax" value={amount(pick(invoice, ['total_tax', 'tax_amount'], null), currency)} />
+          <AmountTile label="Total Amount" fieldKey="total_amount" value={amount(totalValue(invoice), currency)} highlight />
         </div>
         {taxRows.length > 0 && <MiniTable headers={['Tax', 'Rate', 'Amount']} aligns={['center', 'center', 'right']} widths={['40%', '25%', '35%']} rows={taxRows.map((tax) => [tax.tax_desc ?? tax.tax_description ?? tax.name, taxRate(tax), amount(tax.amount ?? tax.tax_amount, currency)])} />}
       </DetailSection>
-      <DetailSection title={`Line Items — ${display(invoiceNumber(invoice))}`}><MiniTable headers={['#', 'Description', 'Qty', 'Unit Price', 'Amount']} aligns={['center', 'left', 'center', 'center', 'right']} widths={['3.5rem', null, '5rem', '8rem', '9rem']} rows={lineItems.map((item, index) => [index + 1, display(item.description ?? item.item_description), display(item.quantity), amount(item.unit_price, currency), amount(item.total_amount ?? item.taxable_amount ?? item.amount, currency)])} empty="No extracted line items are available." /></DetailSection>
+      <DetailSection title={`Line Items — ${display(invoiceNumber(invoice))}`}><Flagged fieldKey="line_items"><MiniTable headers={['#', 'Description', 'Qty', 'Unit Price', 'Amount']} aligns={['center', 'left', 'center', 'center', 'right']} widths={['3.5rem', null, '5rem', '8rem', '9rem']} rows={lineItems.map((item, index) => [index + 1, display(item.description ?? item.item_description), display(item.quantity), amount(item.unit_price, currency), amount(item.total_amount ?? item.taxable_amount ?? item.amount, currency)])} empty="No extracted line items are available." /></Flagged></DetailSection>
     </>
   )
 }
@@ -561,12 +727,14 @@ function Amounts({ invoice }) {
 const CELL_ALIGN = { left: 'text-left', center: 'text-center', right: 'text-right' }
 
 // Headers are always centered; body cells follow `aligns` (only amount columns are right-aligned).
-function AmountTile({ label, value, highlight = false }) {
+function AmountTile({ label, value, highlight = false, fieldKey }) {
   return (
+    <Flagged fieldKey={fieldKey}>
     <div className={`rounded-lg border px-3.5 py-3 ${highlight ? 'border-[#bcd6fb] bg-[#eef5fd]' : 'border-[#e3ebf4] bg-[#fbfcfe]'}`}>
       <p className="text-[11px] font-semibold uppercase tracking-[0.03em] text-[#607a98]">{label}</p>
       <p className={`mt-1.5 text-[15px] font-semibold ${highlight ? 'text-[#1769e8]' : 'text-[#102a4c]'}`}>{value}</p>
     </div>
+    </Flagged>
   )
 }
 
@@ -584,5 +752,48 @@ function MiniTable({ headers, rows, aligns = [], widths = [], compact = false, e
 }
 
 function PreviewMessage({ icon, title, detail }) {
-  return <div className="flex h-full min-h-[260px] flex-col items-center justify-center gap-2 px-6 text-center text-[#66809e]">{icon}<p className="text-xs font-bold text-[#29466a]">{title}</p><p className="max-w-xs text-[11px]">{detail}</p></div>
+  return <div className="flex h-full min-h-[260px] flex-col items-center justify-center gap-2 px-6 text-center text-[#66809e]">{icon}<p className="text-xs font-semibold text-[#1265c8]">{title}</p><p className="max-w-xs text-[11px]">{detail}</p></div>
+}
+
+// The vendor of an invoice, as read from the invoice and checked against the GST records.
+function VendorInfoModal({ invoice, onClose }) {
+  useEffect(() => {
+    const onKey = (event) => { if (event.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+  const verified = vendorGstinVerified(invoice)
+  const gstStatus = pick(invoice, ['vendor_gstin_status'])
+  return createPortal(
+    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-950/50 p-4" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <section className="flex max-h-[90dvh] w-full max-w-xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="vendor-info-title">
+        <header className="flex items-start justify-between gap-4 border-b-2 border-[#6aafff] bg-[#eef6ff] px-5 py-3.5">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-[#e6f1ff] text-[#3a73b8]"><Building2 size={18} /></span>
+            <div className="min-w-0">
+              <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-[#4a7ab5]">Vendor details</p>
+              <h2 id="vendor-info-title" className="truncate text-[17px] font-bold text-[#102a4c]">{vendorName(invoice)}</h2>
+            </div>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close" className="grid size-8 shrink-0 place-items-center rounded-full bg-white/80 text-[#5f7895] transition hover:bg-white hover:text-[#102a4c]"><X size={18} /></button>
+        </header>
+        <div className="overflow-y-auto px-5 py-4">
+          <DetailSection title="Vendor">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Vendor Name" value={vendorName(invoice)} />
+              <Field label="GSTIN" value={vendorGstin(invoice)} />
+              <Field label="GST Status" value={verified ? `Verified${gstStatus ? ` · ${gstStatus}` : ''}` : (gstStatus || 'Not verified')} />
+              <Field label="Legal Name" value={pick(invoice, ['vendor_gstin_legal_name'])} />
+              <Field label="Trade Name" value={pick(invoice, ['vendor_gstin_trade_name'])} />
+              <Field wide label="Address" value={pick(invoice, ['vendor_address', 'supplier_address', 'address'])} />
+            </div>
+          </DetailSection>
+        </div>
+        <footer className="flex justify-end border-t border-[#dce6f1] bg-[#fbfcfe] px-5 py-3">
+          <button type="button" onClick={onClose} className="inline-flex h-8 items-center rounded-md border border-[#b9d3ef] bg-white px-3.5 text-xs font-semibold text-[#1265c8] transition hover:bg-[#eaf3ff]" style={BTN_XS_BOLD}>Close</button>
+        </footer>
+      </section>
+    </div>,
+    document.body,
+  )
 }

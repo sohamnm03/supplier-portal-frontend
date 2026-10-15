@@ -75,13 +75,29 @@ export default function useInvoiceUploads(vendorId) {
     return () => { ignore = true }
   }, [vendorId])
 
+  // Fetches the vendor's invoices again (after one was replaced) and resolves with them, so a caller can wait for the new data.
+  const reload = useCallback(async () => {
+    const remoteInvoices = (await getVendorInvoices(vendorId)).map(normalizeInvoice)
+    setInvoices((current) => [...current.filter((invoice) => invoice.source !== 'api'), ...remoteInvoices])
+    return remoteInvoices
+  }, [vendorId])
+
+  // Files that could not be read: they are taken off the list (they belong in no tab) and reported in a dialog instead.
+  const [readFailures, setReadFailures] = useState([])
+  const failRead = useCallback((item, message) => {
+    URL.revokeObjectURL(item.url)
+    setInvoices((current) => current.filter((invoice) => invoice.id !== item.id))
+    setReadFailures((current) => [...current, { id: item.id, name: item.name, file: item.file, message }])
+  }, [])
+  const dismissReadFailures = useCallback(() => setReadFailures([]), [])
+
   const patchInvoice = useCallback((id, changes) => {
     setInvoices((current) => current.map((invoice) => (invoice.id === id ? { ...invoice, ...changes } : invoice)))
   }, [])
 
   const extractItem = useCallback(async (item) => {
     if (!vendorId) {
-      patchInvoice(item.id, { extractionStatus: 'failed', extractionError: 'Vendor ID is missing. Please log in again.' })
+      failRead(item, 'Your session has expired. Please sign in again.')
       return
     }
 
@@ -106,11 +122,11 @@ export default function useInvoiceUploads(vendorId) {
       ])
       setLoadError('')
     } catch (requestError) {
-      patchInvoice(item.id, { extractionStatus: 'failed', extractionError: requestError?.message || 'Unable to extract the invoice.' })
+      failRead(item, requestError?.message || '')
     } finally {
       clearInterval(progressTimer)
     }
-  }, [patchInvoice, vendorId])
+  }, [failRead, patchInvoice, vendorId])
 
   // Uploaded files are extracted straight away, one after another; there is no manual extract step.
   const addFiles = useCallback((fileList) => {
@@ -162,5 +178,5 @@ export default function useInvoiceUploads(vendorId) {
     if (target?.file && target.source === 'local') extractItem(target)
   }, [extractItem, invoices])
 
-  return { invoices, addFiles, removeInvoice, extractInvoice, error, clearError, loadError, isLoading }
+  return { invoices, addFiles, removeInvoice, extractInvoice, error, clearError, loadError, isLoading, reload, readFailures, dismissReadFailures }
 }
