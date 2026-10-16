@@ -5,7 +5,7 @@ import Checkbox from '../common/Checkbox'
 import Loader from '../common/Loader'
 import { joinPhone } from '../../data/countryCodes'
 import { documentTypes } from '../../data/documentTypes'
-import { displayValue, maskAccountNumber } from '../../utils/formatters'
+import { displayValue, maskAadhaar, maskAccountNumber } from '../../utils/formatters'
 import TermsPolicyModal from './TermsPolicyModal'
 import { isCompanyType } from '../../data/vendorTypes'
 
@@ -19,7 +19,7 @@ const sections = [
     step: 1,
     wide: true,
     fields: [
-      ['GSTIN', 'gstin'], ['Legal name', 'vendorLegalName'], ['PAN / Tax ID', 'pan'], ['Aadhaar number', 'aadhaar'],
+      ['GSTIN', 'gstin'], ['Legal name', 'vendorLegalName'], ['PAN / Tax ID', 'pan'], ['Aadhaar number', 'aadhaar', 'aadhaar'],
       ['Phone number', 'vendorPhone'], ['Email address', 'vendorEmail'], ['Vendor type', 'vendorType'],
       ['Currency', 'currency'],
       ['Registration no.', 'registrationNumber'], ['MSME status', 'msmeStatus'], ['Relationship manager', 'assignedRm'], ['Udyam no.', 'udyamNumber'],
@@ -79,7 +79,7 @@ export default function ReviewRequest({ values, documents = {}, existingDocument
                 <div key={key} className={key.includes('Address') ? 'sm:col-span-2' : ''}>
                   <dt className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">{label}</dt>
                   <dd className="mt-0.5 break-words text-xs font-semibold text-slate-800">
-                    {masked ? maskAccountNumber(values[key]) : displayValue(key === 'vendorPhone' ? joinPhone(values.vendorPhoneCode, values.vendorPhone) : values[key])}
+                    {masked ? (masked === 'aadhaar' ? maskAadhaar(values[key]) : maskAccountNumber(values[key])) : displayValue(key === 'vendorPhone' ? joinPhone(values.vendorPhoneCode, values.vendorPhone) : values[key])}
                   </dd>
                 </div>
               ))}

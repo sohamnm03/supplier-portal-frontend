@@ -6,13 +6,14 @@ export const STAGES = {
   checkerReview: 'checker_review',
   approved: 'approved', // checker approved, SAP vendor being created
   rejected: 'rejected', // final rejection
+  changeRequested: 'change_requested', // asked to change details; waiting for the reviewer to send the application back
   active: 'active', // approved and live: invoices and change requests
 }
 
 // Stages in which the vendor edits the onboarding form.
 export const FORM_STAGES = [STAGES.draft, STAGES.returned]
 // Stages in which the vendor can only follow the progress of their application.
-export const WAITING_STAGES = [STAGES.makerReview, STAGES.checkerReview, STAGES.approved, STAGES.rejected]
+export const WAITING_STAGES = [STAGES.makerReview, STAGES.checkerReview, STAGES.approved, STAGES.rejected, STAGES.changeRequested]
 
 export function homeForStage(stage) {
   if (stage === STAGES.active) return '/invoices'

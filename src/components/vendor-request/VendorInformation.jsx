@@ -10,19 +10,47 @@ import { checkPanExists, lookupPincode, verifyGstin } from '../../api/vendorApi'
 import useDuplicateCheck from '../../hooks/useDuplicateCheck'
 import { PIN_PATTERN } from '../../hooks/usePincodeAutofill'
 import { useFlag } from '../../context/flags-context'
+import { indianStates } from '../../data/mockData'
 
 const PAN_PATTERN = /^[A-Z]{5}[0-9]{4}[A-Z]$/
 const GSTIN_PATTERN = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/
 
-export default function VendorInformation({ register, errors, watch, setValue, setError, clearErrors, lockedFields = [], disabled = false, gstLookup, setGstLookup, onGstLookupSuccess, onPanTakenChange, onPanCheckingChange, takenRef }) {
+const VERIFIED_CHIP = (
+  <span className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-bold text-emerald-700">
+    <BadgeCheck size={14} /> Verified
+  </span>
+)
+
+function VerifyButton({ onClick, busy, disabled, label }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={busy || disabled}
+      className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg border border-brand-100 bg-brand-50 px-3 text-xs font-bold text-brand-700 transition hover:border-brand-500 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+      aria-label={label}
+    >
+      {busy ? <Loader /> : <Search size={14} />}
+      Verify
+    </button>
+  )
+}
+
+export default function VendorInformation({ register, errors, watch, setValue, setError, clearErrors, lockedFields = [], disabled = false, gstLookup, setGstLookup, onGstLookupSuccess, onPanTakenChange, onPanCheckingChange, takenRef, identity }) {
   const msmeStatus = watch('msmeStatus')
   // An Udyam number the reviewer flagged must be editable whatever the MSME status currently says.
   const udyamFlagged = Boolean(useFlag('udyamNumber'))
   const pan = watch('pan')?.trim().toUpperCase() || ''
   const gstin = watch('gstin')?.trim().toUpperCase() || ''
-  // gstLookup (kept by the page, so it survives moving between steps) holds the GSTIN that was verified: set by a
-  // successful lookup, and cleared again if the GSTIN is changed.
-  const gstVerified = Boolean(gstLookup.gstin) && gstLookup.gstin === gstin
+  const aadhaarFilled = Boolean(watch('aadhaar')?.replace(/\D/g, ''))
+  // With the new verification on, the GSTIN is verified when the backend has confirmed this exact value. In legacy mode
+  // gstLookup (kept by the page, so it survives moving between steps) holds the GSTIN that was looked up, and is cleared
+  // again if the GSTIN is changed.
+  const gstVerified = identity.enabled ? identity.isVerified('GSTIN') : Boolean(gstLookup.gstin) && gstLookup.gstin === gstin
+  // The PAN is not typed: it comes from the verified GSTIN and is shown greyed out, like the legal name.
+  const panFromGstin = identity.enabled
+  const failureOf = (service) => (identity.failure(service) ? { message: identity.failure(service) } : undefined)
+  const needsVerify = (service, label, filled, hint) => (identity.enabled && filled && identity.pending.includes(service) ? `Verify the ${label} to continue.` : hint)
 
   // City and District come from the GSTIN's PIN code, right after the lookup rather than once the vendor reaches the
   // address step. They stay editable. A failed PIN lookup is silent: the address step retries it and tells the vendor.
@@ -39,7 +67,52 @@ export default function VendorInformation({ register, errors, watch, setValue, s
     }
   }
 
-  const handleGstLookup = async () => {
+  // Puts what a verified GSTIN returned into the form and locks those fields, then fills City / District from the PIN.
+  const applyGstDetails = (verifiedGstin, { legalName, address, state, postalCode, pan: gstPan }, message) => {
+    const appliedFields = []
+    setValue('gstin', verifiedGstin, { shouldDirty: true, shouldValidate: true })
+    if (legalName) {
+      setValue('vendorLegalName', legalName, { shouldDirty: true, shouldValidate: true })
+      appliedFields.push('vendorLegalName')
+    }
+    if (address) {
+      setValue('registeredAddress1', address, { shouldDirty: true, shouldValidate: true })
+      appliedFields.push('registeredAddress1')
+    }
+    if (state) {
+      setValue('registeredState', state, { shouldDirty: true, shouldValidate: true })
+      appliedFields.push('registeredState')
+    }
+    if (postalCode) {
+      setValue('registeredPostalCode', postalCode, { shouldDirty: true, shouldValidate: true })
+      appliedFields.push('registeredPostalCode')
+    }
+    if (gstPan) setValue('pan', gstPan, { shouldDirty: true, shouldValidate: true })
+    clearErrors(['gstin', 'pan', 'vendorLegalName', 'registeredAddress1', 'registeredState', 'registeredPostalCode'])
+    onGstLookupSuccess?.(appliedFields)
+    setGstLookup({ loading: false, gstin: verifiedGstin, message })
+    fillCityAndDistrict(postalCode, ++cityLookupToken.current)
+  }
+
+  const handleGstVerify = async () => {
+    setGstLookup({ loading: true, gstin: '', message: '' })
+    clearErrors('gstin')
+    const result = await identity.verify('GSTIN')
+    if (!result) {
+      setGstLookup({ loading: false, gstin: '', message: '' })
+      return
+    }
+    const { fill } = result
+    applyGstDetails(gstin, {
+      legalName: fill.vendor_legal_name,
+      address: fill.street,
+      state: indianStates.includes(fill.state) ? fill.state : '',
+      postalCode: fill.postal_code,
+      pan: fill.pan,
+    }, 'GSTIN verified. Details are locked.')
+  }
+
+  const handleLegacyGstLookup = async () => {
     if (!GSTIN_PATTERN.test(gstin)) {
       setError('gstin', { type: 'manual', message: 'Enter a valid 15-character GSTIN before verifying.' })
       return
@@ -60,7 +133,7 @@ export default function VendorInformation({ register, errors, watch, setValue, s
       const legalName = details.tradeName || details.legalName || ''
       const state = details.stateCode || ''
       const postalCode = String(details.addrPncd || '')
-      const appliedFields = ['gstin']
+      const appliedFields = []
 
       setValue('gstin', verifiedGstin, { shouldDirty: true, shouldValidate: true })
       if (legalName) {
@@ -95,9 +168,10 @@ export default function VendorInformation({ register, errors, watch, setValue, s
   useEffect(() => {
     if (!gstLookup.gstin || gstLookup.gstin === gstin) return
     cityLookupToken.current += 1 // a PIN lookup still in flight belongs to the old GSTIN
-    ;['vendorLegalName', 'registeredAddress1', 'registeredCity', 'registeredDistrict', 'registeredState', 'registeredPostalCode'].forEach((name) => setValue(name, '', { shouldDirty: true }))
+    // The PAN came from the GSTIN too (new verification), so it goes with it.
+    ;['vendorLegalName', 'registeredAddress1', 'registeredCity', 'registeredDistrict', 'registeredState', 'registeredPostalCode', ...(identity.enabled ? ['pan'] : [])].forEach((name) => setValue(name, '', { shouldDirty: true }))
     setGstLookup({ loading: false, gstin: '', message: '' })
-  }, [gstin, gstLookup.gstin, setGstLookup, setValue])
+  }, [gstin, gstLookup.gstin, setGstLookup, setValue, identity.enabled])
 
   const checkingPan = useDuplicateCheck({
     value: pan,
@@ -128,24 +202,16 @@ export default function VendorInformation({ register, errors, watch, setValue, s
           label="GSTIN"
           name="gstin"
           register={register}
-          error={errors.gstin}
-          hint={gstLookup.gstin === gstin && gstLookup.message ? gstLookup.message : '15-character GST identification number, if applicable'}
+          error={errors.gstin || failureOf('GSTIN')}
+          hint={gstVerified && gstLookup.gstin === gstin && gstLookup.message ? gstLookup.message : needsVerify('GSTIN', 'GSTIN', Boolean(gstin), identity.enabled ? 'Verify to auto-fill legal name, address and PAN.' : '15-character GST identification number, if applicable')}
           locked={lockedFields.includes('gstin')}
-          action={gstVerified ? (
-            <span className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-bold text-emerald-700">
-              <BadgeCheck size={14} /> Verified
-            </span>
-          ) : (
-            <button
-              type="button"
-              onClick={handleGstLookup}
-              disabled={gstLookup.loading || !gstin}
-              className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg border border-brand-100 bg-brand-50 px-3 text-xs font-bold text-brand-700 transition hover:border-brand-500 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
-              aria-label="Verify GSTIN"
-            >
-              {gstLookup.loading ? <Loader /> : <Search size={14} />}
-              Verify
-            </button>
+          action={gstVerified ? VERIFIED_CHIP : (
+            <VerifyButton
+              onClick={identity.enabled ? handleGstVerify : handleLegacyGstLookup}
+              busy={gstLookup.loading || identity.isBusy('GSTIN')}
+              disabled={!gstin}
+              label="Verify GSTIN"
+            />
           )}
         />
         <Input
@@ -162,16 +228,23 @@ export default function VendorInformation({ register, errors, watch, setValue, s
           label="PAN"
           name="pan"
           register={register}
-          error={errors.pan}
-          hint={checkingPan ? 'Checking availability…' : 'Format: ABCDE1234F'}
+          error={errors.pan || failureOf('PAN')}
+          hint={checkingPan ? 'Checking availability…' : identity.enabled ? (identity.isVerified('PAN') ? 'PAN verified.' : needsVerify('PAN', 'PAN', Boolean(pan), 'Filled automatically from GSTIN verification')) : 'Format: ABCDE1234F'}
+          locked={panFromGstin}
+          action={identity.enabled ? (identity.isVerified('PAN') ? VERIFIED_CHIP : pan ? (
+            <VerifyButton onClick={() => identity.verify('PAN')} busy={identity.isBusy('PAN')} label="Verify PAN" />
+          ) : undefined) : undefined}
           required
         />
         <AadhaarInput
           label="Aadhaar number"
           name="aadhaar"
           register={register}
-          error={errors.aadhaar}
-          hint="12-digit Aadhaar number, if applicable"
+          error={errors.aadhaar || failureOf('AADHAAR')}
+          hint={identity.enabled && aadhaarFilled && identity.isVerified('AADHAAR') ? 'Aadhaar number verified.' : needsVerify('AADHAAR', 'Aadhaar number', aadhaarFilled, '12-digit Aadhaar number, if applicable')}
+          action={identity.enabled ? (identity.isVerified('AADHAAR') ? VERIFIED_CHIP : (
+            <VerifyButton onClick={() => identity.verify('AADHAAR')} busy={identity.isBusy('AADHAAR')} disabled={!aadhaarFilled} label="Verify Aadhaar number" />
+          )) : undefined}
         />
         <Input
           label="Company registration number"

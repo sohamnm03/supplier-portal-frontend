@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { ArrowLeft, ChevronRight, FilePenLine, FileText, Home, LogOut } from 'lucide-react'
 import AppLogo from '../common/AppLogo'
 import useAuth from '../../hooks/useAuth'
 import VendorProfilePanel from './VendorProfilePanel'
-import { STAGES, homeForStage } from '../../utils/stages'
+import { OPEN_PROFILE_EVENT } from '../../utils/events'
+import { STAGES, WAITING_STAGES, homeForStage } from '../../utils/stages'
 
 const NAV_ITEMS = [
   { to: '/invoices', label: 'Invoices', icon: FileText },
@@ -19,8 +20,18 @@ export default function AppShell({ breadcrumb, children, backTo, onBack }) {
   // Invoices, change requests and the editable profile only exist once the vendor is active; until then the
   // vendor just follows their application.
   const isActive = stage === STAGES.active
+  // While the application is being reviewed the vendor can still look at what they submitted, but not change it.
+  const canViewProfile = isActive || WAITING_STAGES.includes(stage)
   const showSidebar = isActive && !backTo
   const homePath = homeForStage(stage)
+
+  // Pages can ask for the profile to open (e.g. "View submitted application" on the status page).
+  useEffect(() => {
+    if (!canViewProfile) return undefined
+    const open = () => setProfileOpen(true)
+    window.addEventListener(OPEN_PROFILE_EVENT, open)
+    return () => window.removeEventListener(OPEN_PROFILE_EVENT, open)
+  }, [canViewProfile])
 
   const handleSignOut = () => {
     logout()
@@ -40,27 +51,32 @@ export default function AppShell({ breadcrumb, children, backTo, onBack }) {
             <AppLogo compact />
             <div className="hidden h-7 w-px bg-slate-200 sm:block" aria-hidden="true" />
             <nav aria-label="Breadcrumb" className="hidden min-w-0 items-center gap-2 text-xs font-medium text-slate-500 sm:flex">
-              <Link to={homePath} className="transition hover:text-brand-600">Workspace</Link>
+              {isActive
+                ? <Link to={homePath} className="transition hover:text-brand-600">Workspace</Link>
+                : <span>Workspace</span>}
               <ChevronRight size={14} className="text-slate-400" />
               <span className="truncate font-semibold text-navy-900">{breadcrumb || 'Vendor Onboarding'}</span>
             </nav>
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-3">
-            <Link
-              to={homePath}
-              aria-label="Workspace home"
-              title="Workspace home"
-              className="interactive-icon"
-            >
-              <Home size={18} />
-            </Link>
+            {isActive && (
+              <Link
+                to={homePath}
+                aria-label="Workspace home"
+                title="Workspace home"
+                className="interactive-icon"
+              >
+                <Home size={18} />
+              </Link>
+            )}
             <button
               type="button"
-              onClick={() => isActive && setProfileOpen(true)}
-              disabled={!isActive}
-              className="hidden items-center gap-2 border-l border-slate-200 pl-3 text-left transition hover:text-brand-700 disabled:cursor-default sm:flex"
-              aria-label="Open vendor profile"
+              onClick={() => canViewProfile && setProfileOpen(true)}
+              disabled={!canViewProfile}
+              className={`hidden items-center gap-2 pl-3 text-left transition hover:text-brand-700 disabled:cursor-default sm:flex ${isActive ? 'border-l border-slate-200' : ''}`}
+              aria-label={isActive ? 'Open vendor profile' : 'View submitted application'}
+              title={isActive ? undefined : 'View submitted application'}
             >
               <span className="grid size-8 place-items-center rounded-full bg-brand-50 text-xs font-bold text-brand-700">
                 {(user?.email?.[0] || 'V').toUpperCase()}
@@ -96,7 +112,8 @@ export default function AppShell({ breadcrumb, children, backTo, onBack }) {
             </div>
           </aside>
         )}
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        {/* While the submitted application is open beside the status page, the page makes room for it (the panel is 42rem wide). */}
+        <div className={`flex min-h-0 min-w-0 flex-1 flex-col transition-[padding] duration-200 ${profileOpen && !isActive ? 'lg:pr-[42rem]' : ''}`}>
           {showSidebar && (
             <nav className="no-print flex gap-1 overflow-x-auto border-b border-slate-200 bg-white/90 px-3 py-2 md:hidden" aria-label="Sections">
               {NAV_ITEMS.map(({ to, label }) => (
@@ -130,7 +147,7 @@ export default function AppShell({ breadcrumb, children, backTo, onBack }) {
       </main>
         </div>
       </div>
-      <VendorProfilePanel open={profileOpen} onClose={() => setProfileOpen(false)} profile={profile} onProfileRefresh={updateProfile} />
+      <VendorProfilePanel open={profileOpen} onClose={() => setProfileOpen(false)} profile={profile} onProfileRefresh={updateProfile} readOnly={!isActive} />
     </div>
   )
 }

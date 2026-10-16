@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
-import { Clock, Pencil, X } from 'lucide-react'
+import { Clock, FileText, Pencil, PencilLine, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { getUpdateRequests, getVendorProfile, UPDATE_REQUESTS_CHANGED_EVENT } from '../../api/vendorApi'
+import { getMyDocuments, getUpdateRequests, getVendorProfile, UPDATE_REQUESTS_CHANGED_EVENT } from '../../api/vendorApi'
 import Button from '../common/Button'
 import Loader from '../common/Loader'
 import EditDetailsModal from './EditDetailsModal'
 import { displayProfileValue, isRegisteredMsme, sections } from './profileFields'
 import { isCompanyType } from '../../data/vendorTypes'
+import { documentTypes } from '../../data/documentTypes'
+import { OPEN_REQUEST_CHANGES_EVENT } from '../../utils/events'
 
 const POLL_INTERVAL_MS = 10000
 const IN_REVIEW = ['update requested', 'sent for approval']
@@ -14,10 +16,13 @@ const wideKeys = new Set(['vendor_legal_name', 'street', 'account_holder_name'])
 
 // The vendor's profile, read-only. "Edit details" opens a popup (EditDetailsModal) that shows the
 // current details beside an editable copy; the change is then sent for approval rather than applied.
-export default function VendorProfilePanel({ open, onClose, profile, onProfileRefresh }) {
+// With `readOnly` (the application is still under review) it is a copy of what was submitted: no editing and no update
+// requests, but the documents on file are listed and there is a shortcut to ask for changes.
+export default function VendorProfilePanel({ open, onClose, profile, onProfileRefresh, readOnly = false }) {
   const [editOpen, setEditOpen] = useState(false)
   const [openRequest, setOpenRequest] = useState(null)
   const [sentNotice, setSentNotice] = useState(false)
+  const [documents, setDocuments] = useState(null)
 
   const refreshRef = useRef(onProfileRefresh)
   useEffect(() => { refreshRef.current = onProfileRefresh }, [onProfileRefresh])
@@ -34,7 +39,12 @@ export default function VendorProfilePanel({ open, onClose, profile, onProfileRe
   // the new details - or the unchanged old ones - show immediately and Edit details comes back.
   const hadOpenRequest = useRef(false)
   useEffect(() => {
-    if (!open || !profile?.vendor_id) return undefined
+    if (!open || !readOnly) return
+    getMyDocuments().then(setDocuments).catch(() => setDocuments({}))
+  }, [open, readOnly])
+
+  useEffect(() => {
+    if (!open || readOnly || !profile?.vendor_id) return undefined
     const vendorId = profile.vendor_id
     let ignore = false
 
@@ -71,7 +81,7 @@ export default function VendorProfilePanel({ open, onClose, profile, onProfileRe
       document.removeEventListener('visibilitychange', refresh)
       window.removeEventListener(UPDATE_REQUESTS_CHANGED_EVENT, refresh)
     }
-  }, [open, profile?.vendor_id])
+  }, [open, readOnly, profile?.vendor_id])
 
   if (!open) return null
 
@@ -81,20 +91,23 @@ export default function VendorProfilePanel({ open, onClose, profile, onProfileRe
     <>
       {/* The panel steps aside while the edit popup is open, and comes back when it closes. */}
       {!editOpen && <div
-        className="fixed inset-0 z-50 flex justify-end bg-navy-950/45 backdrop-blur-[2px]"
+        // While reviewing, the panel sits beside the status page, below the header, with no dimming: nothing is covered.
+        className={`fixed z-50 flex justify-end ${readOnly ? 'pointer-events-none bottom-0 right-0 top-14' : 'inset-0 bg-navy-950/45 backdrop-blur-[2px]'}`}
         role="presentation"
         onMouseDown={(event) => event.target === event.currentTarget && onClose()}
       >
-        <aside className="flex h-full w-full max-w-2xl flex-col bg-white shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="vendor-profile-title">
-          <header className="flex items-start justify-between border-b border-slate-200 px-5 py-4 sm:px-6">
+        <aside className={`flex h-full w-full max-w-2xl flex-col bg-white shadow-2xl ${readOnly ? 'pointer-events-auto border-l border-blue-200' : ''}`} role="dialog" aria-modal="true" aria-labelledby="vendor-profile-title">
+          <header className={`flex items-start justify-between border-b px-5 py-4 sm:px-6 ${readOnly ? 'border-blue-200 bg-[#eef7ff]' : 'border-slate-200'}`}>
             <div className="min-w-0">
-              <p className="eyebrow">Vendor profile</p>
+              <p className="eyebrow">{readOnly ? 'Submitted application' : 'Vendor profile'}</p>
               <h2 id="vendor-profile-title" className="mt-1 truncate text-xl font-extrabold text-navy-950">
                 {profile?.vendor_legal_name || profile?.email || 'Vendor details'}
               </h2>
             </div>
             <div className="flex shrink-0 items-center gap-2">
-              {profile?.status && <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-bold capitalize text-emerald-700">{profile.status}</span>}
+              {readOnly
+                ? <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-800">{profile?.stage === 'rejected' ? 'Not approved' : profile?.stage === 'change_requested' ? 'Change requested' : 'In review'}</span>
+                : profile?.status && <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-bold capitalize text-emerald-700">{profile.status}</span>}
               <button type="button" onClick={onClose} className="interactive-icon" aria-label="Close vendor profile"><X size={20} /></button>
             </div>
           </header>
@@ -129,12 +142,51 @@ export default function VendorProfilePanel({ open, onClose, profile, onProfileRe
                     </div>
                   </section>
                 ))}
+
+                {readOnly && (
+                  <section>
+                    <h3 className="flex items-center gap-2 border-b border-slate-100 pb-1.5 text-[13px] font-bold text-navy-900">
+                      <FileText size={15} className="text-brand-600" /> Documents received
+                    </h3>
+                    {documents === null ? (
+                      <p className="mt-2.5 flex items-center gap-2 text-xs text-slate-500"><Loader /> Loading…</p>
+                    ) : Object.keys(documents).length === 0 ? (
+                      <p className="mt-2.5 text-xs text-slate-500">No supporting documents were uploaded.</p>
+                    ) : (
+                      <ul className="mt-2.5 space-y-1.5">
+                        {Object.entries(documents).map(([type, files]) => (
+                          <li key={type} className="text-xs">
+                            <span className="font-bold text-navy-900">{documentTypes.find((item) => item.key === type)?.label || type}</span>
+                            <span className="text-slate-600"> · {files.map((file) => file.original_name).join(', ')}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </section>
+                )}
               </div>
 
-              <footer className="flex justify-end gap-2 border-t border-slate-200 bg-white px-5 py-3 text-[13px] sm:px-6">
+              <footer className={`flex items-center justify-between gap-2 border-t px-5 py-3 text-[13px] sm:px-6 ${readOnly ? 'border-blue-200 bg-[#eef7ff]' : 'border-slate-200 bg-white'}`}>
+                {readOnly ? (
+                  profile?.stage === 'change_requested' ? (
+                    <p className="text-xs text-slate-500">You have asked to change details. Our team will send your application back to you.</p>
+                  ) : ['maker_review', 'checker_review'].includes(profile?.stage) ? (
+                    <>
+                      <p className="text-xs text-slate-500">Spotted a mistake? Our team can send the application back to you.</p>
+                      <Button
+                        variant="secondary"
+                        className="min-h-9! shrink-0 px-4! py-1.5! text-[13px]!"
+                        onClick={() => { onClose(); window.dispatchEvent(new Event(OPEN_REQUEST_CHANGES_EVENT)) }}
+                      >
+                        <PencilLine size={15} /> Request changes
+                      </Button>
+                    </>
+                  ) : null
+                ) : (
                 <Button className="min-h-9! px-4! py-1.5!" type="button" onClick={() => setEditOpen(true)} disabled={pending} title={pending ? 'An update request is already awaiting approval' : undefined}>
                   <Pencil size={16} /> Edit details
                 </Button>
+                )}
               </footer>
             </>
           )}

@@ -17,6 +17,7 @@ import ReturnedBanner from '../components/vendor-request/ReturnedBanner'
 import SupportingDocuments from '../components/vendor-request/SupportingDocuments'
 import useVendorRequest from '../hooks/useVendorRequest'
 import useAuth from '../hooks/useAuth'
+import useIdentityVerification from '../hooks/useIdentityVerification'
 import { FORM_STEPS, STEP_FIELDS } from '../utils/constants'
 import { KEY_BY_FORM_FIELD, buildFlags, stepOfFlag } from '../utils/rejectionFields'
 import { STAGES } from '../utils/stages'
@@ -74,6 +75,7 @@ export default function VendorRequestPage() {
   const [confirmed, setConfirmed] = useState(() => new Set())
 
   const values = watch()
+  const identity = useIdentityVerification(values, returned ? initialValues : null)
   const contactReady = isValidPhone(values.vendorPhoneCode, values.vendorPhone)
 
   // CIN is only for incorporated entities: one left over from a vendor type the vendor has since changed is dropped, unless the
@@ -210,6 +212,10 @@ export default function VendorRequestPage() {
     if (!valid) return
 
     if (step === 1) {
+      if (identity.blocked) {
+        setSubmitError(`Verify your ${identity.pending.map((service) => ({ PAN: 'PAN', GSTIN: 'GSTIN', AADHAAR: 'Aadhaar number' })[service]).join(', ')} to continue.`)
+        return
+      }
       setCheckingDuplicates(true)
       try {
         const normalizedPan = values.pan.trim().toUpperCase()
@@ -252,6 +258,10 @@ export default function VendorRequestPage() {
 
   const submitRequest = handleSubmit(async (data) => {
     if (!declarationsComplete || unresolvedCount > 0) return
+    if (identity.blocked) {
+      setSubmitError('Go back to the vendor information step and verify the PAN, GSTIN and Aadhaar number you entered.')
+      return
+    }
     setSubmitting(true)
     setSubmitError('')
     try {
@@ -284,6 +294,7 @@ export default function VendorRequestPage() {
             onPanTakenChange={setPanTaken}
             onPanCheckingChange={setCheckingPan}
             onGstLookupSuccess={lockGstFields}
+            identity={identity}
           />
         </div>
       )
@@ -412,7 +423,7 @@ export default function VendorRequestPage() {
                         <Button
                           type="button"
                           onClick={nextStep}
-                          disabled={saving || checkingDuplicates || checkingPan || panTaken}
+                          disabled={saving || checkingDuplicates || checkingPan || panTaken || (step === 1 && identity.blocked)}
                         >
                           {saving || checkingDuplicates || checkingPan ? <><Loader /> {saving ? 'Saving...' : 'Checking...'}</> : <>{step === 3 ? 'Review request' : 'Continue'} <ArrowRight size={17} /></>}
                         </Button>

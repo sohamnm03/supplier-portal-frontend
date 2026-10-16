@@ -33,6 +33,8 @@ const jsonRequest = (method, payload) => ({
 const GST_VERIFY_API_URL = `${SHARED_SERVICES_URL}/api/verify`
 const INVOICE_PREVIEW_API_URL = `${SHARED_SERVICES_URL}/api/invoice/preview-url`
 
+// Legacy GSTIN lookup straight against the shared service. Only used when VITE_VERIFICATION_MODE=legacy; otherwise
+// verifyIdentity() below is used.
 export async function verifyGstin(gstin) {
   const params = new URLSearchParams({ gstin })
   const response = await fetch(`${GST_VERIFY_API_URL}?${params}`)
@@ -44,6 +46,40 @@ export async function verifyGstin(gstin) {
 
   return body
 }
+
+// Verifies a PAN, GSTIN or Aadhaar number through our backend (service is 'PAN', 'GSTIN' or 'AADHAAR'). `context` is the
+// other tax ids in the form ({ pan, gstin }) so the backend can check the PAN belongs to the GSTIN. Resolves to
+// { verified, message, fill?, pan_verified? }; a verification that is down or times out rejects, which blocks the form.
+export async function verifyIdentity(service, value, context = {}) {
+  let response
+  try {
+    response = await authFetch(`/vendors/verify/${service.toLowerCase()}`, jsonRequest('POST', { value, ...context }))
+  } catch {
+    throw new Error('Verification is unavailable right now. Please try again shortly.')
+  }
+  const body = await response.json().catch(() => null)
+  if (response.status === 400 || response.status === 503) throw new Error(body?.message || body?.error || 'Verification is unavailable right now. Please try again shortly.')
+  if (!response.ok || typeof body?.verified !== 'boolean') throw new Error(body?.error || 'Verification is unavailable right now. Please try again shortly.')
+  return body
+}
+
+// "Request changes" while the application is under review: the fields a vendor can ask to change ([{ field_key,
+// field_label, section }]), sending the request (which tells the maker or checker), and withdrawing it again.
+async function changeRequestCall(path, options, fallback) {
+  const response = await authFetch(`/vendors/me/change-request${path}`, options)
+  const body = await response.json().catch(() => null)
+  if (!response.ok) throw new Error(body?.error || fallback)
+  return body
+}
+
+export async function getChangeRequestFields() {
+  const body = await changeRequestCall('/fields', undefined, 'Unable to load the fields you can change.')
+  return Array.isArray(body?.fields) ? body.fields : []
+}
+
+export const requestChanges = (fields) => changeRequestCall('', jsonRequest('POST', { fields }), 'Unable to send your request. Please try again.')
+
+export const cancelChangeRequest = () => changeRequestCall('/cancel', { method: 'POST' }, 'Unable to cancel your request. Please try again.')
 
 // Public India Post directory. Only the 6-digit PIN code is sent. A PIN code resolves to one district, which
 // is used for both City and District / County (the directory has no separate city), and both stay editable.

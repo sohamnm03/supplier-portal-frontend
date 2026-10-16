@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { AlertTriangle, X } from 'lucide-react'
 import Button from './Button'
 import Loader from './Loader'
@@ -38,7 +39,8 @@ export default function Modal({ open, onClose, onConfirm, title = DISCARD_TEXT.t
     return () => document.removeEventListener('keydown', handleKey)
   }, [open, onClose, busy])
   if (!open) return null
-  return (
+  // Rendered on the body so the dimming covers the whole page, header included.
+  return createPortal(
     <div
       className="fixed inset-0 z-50 grid place-items-center bg-navy-950/55 p-4 backdrop-blur-[2px]"
       role="presentation"
@@ -70,6 +72,7 @@ export default function Modal({ open, onClose, onConfirm, title = DISCARD_TEXT.t
           </Button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

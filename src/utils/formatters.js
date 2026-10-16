@@ -21,6 +21,7 @@ export function maskAadhaarInput(input) {
 }
 
 export const maskAccountNumber =(value = '') => value ? `•••• •••• ${value.slice(-4)}` : '—'
+export const maskAadhaar = (value = '') => (aadhaarDigits(value) ? `XXXX XXXX ${aadhaarDigits(value).slice(-4)}` : '—')
 export const displayValue = (value) => {
   if (typeof value === 'boolean') return value ? 'Yes' : 'No'
   return value || '—'
