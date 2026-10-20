@@ -10,6 +10,7 @@ import { checkPanExists, lookupPincode, verifyGstin } from '../../api/vendorApi'
 import useDuplicateCheck from '../../hooks/useDuplicateCheck'
 import { PIN_PATTERN } from '../../hooks/usePincodeAutofill'
 import { useFlag } from '../../context/flags-context'
+import { PAN_TAKEN_MESSAGE } from '../../utils/constants'
 import { indianStates } from '../../data/mockData'
 
 const PAN_PATTERN = /^[A-Z]{5}[0-9]{4}[A-Z]$/
@@ -169,15 +170,22 @@ export default function VendorInformation({ register, errors, watch, setValue, s
     if (!gstLookup.gstin || gstLookup.gstin === gstin) return
     cityLookupToken.current += 1 // a PIN lookup still in flight belongs to the old GSTIN
     // The PAN came from the GSTIN too (new verification), so it goes with it.
-    ;['vendorLegalName', 'registeredAddress1', 'registeredCity', 'registeredDistrict', 'registeredState', 'registeredPostalCode', ...(identity.enabled ? ['pan'] : [])].forEach((name) => setValue(name, '', { shouldDirty: true }))
+    const cleared = ['vendorLegalName', 'registeredAddress1', 'registeredCity', 'registeredDistrict', 'registeredState', 'registeredPostalCode', ...(identity.enabled ? ['pan'] : [])]
+    cleared.forEach((name) => setValue(name, '', { shouldDirty: true }))
+    // Nothing said about the old values (errors, "already exists", a PAN verification failure) applies to the empty fields.
+    clearErrors(cleared)
+    if (identity.enabled) {
+      if (takenRef) takenRef.current = { ...takenRef.current, pan: '', panMessage: '' }
+      onPanTakenChange?.(false)
+    }
     setGstLookup({ loading: false, gstin: '', message: '' })
-  }, [gstin, gstLookup.gstin, setGstLookup, setValue, identity.enabled])
+  }, [gstin, gstLookup.gstin, setGstLookup, setValue, clearErrors, onPanTakenChange, takenRef, identity.enabled])
 
   const checkingPan = useDuplicateCheck({
     value: pan,
     isValid: PAN_PATTERN.test(pan),
     checkFn: checkPanExists,
-    message: 'This PAN already exists.',
+    message: PAN_TAKEN_MESSAGE,
     fieldName: 'pan',
     setError,
     clearErrors,

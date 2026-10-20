@@ -147,7 +147,7 @@ export default function ReplaceInvoiceModal({ invoice, onClose, onReplaced, onFi
           </button>
         </footer>
 
-        {compare && file && <CompareOverlay currentUrl={compare.url} loading={compare.loading} file={file} invoiceNumber={invoice.invoice_number || invoice.name} onClose={closeCompare} onOverwrite={() => { closeCompare(); submit() }} />}
+        {compare && file && <CompareOverlay invoice={invoice} currentUrl={compare.url} loading={compare.loading} file={file} invoiceNumber={invoice.invoice_number || invoice.name} onClose={closeCompare} onOverwrite={() => { closeCompare(); submit() }} />}
         {done && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-white px-6 text-center" role="status" aria-live="polite">
             <span className="grid size-14 place-items-center rounded-full bg-emerald-50 text-emerald-600"><CheckCircle2 size={34} /></span>

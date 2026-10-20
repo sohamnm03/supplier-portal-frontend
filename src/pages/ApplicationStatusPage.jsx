@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { AlertCircle, Check, CheckCircle2, ChevronRight, Clock3, Eye, PencilLine, RefreshCw, Undo2 } from 'lucide-react'
+import { AlertCircle, Check, CheckCircle2, ChevronRight, Clock3, Eye, FileSignature, PencilLine, RefreshCw, Undo2 } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import PageContainer from '../components/layout/PageContainer'
 import Button from '../components/common/Button'
@@ -30,17 +30,27 @@ const CHANGE_STEPS = [
   { title: 'You update and resubmit', detail: 'Your application then goes through review again.' },
 ]
 
+// The steps once the vendor has signed the agreement and the final approval is pending.
+const SIGNED_STEPS = [
+  { title: 'Application submitted', detail: 'We have received your details and documents.' },
+  { title: 'Agreement signed', detail: 'Your signed agreement is with our team.' },
+  { title: 'Final approval', detail: 'Our team gives the final approval for your account.' },
+  { title: 'Vendor account ready', detail: 'Your account is created and invoices are unlocked.' },
+]
+
 // How many steps are complete for each stage; the next one is "in progress".
 const COMPLETED_STEPS = {
   [STAGES.makerReview]: 1,
   [STAGES.checkerReview]: 2,
   [STAGES.approved]: 3,
   [STAGES.changeRequested]: 2,
+  [STAGES.agreementSigned]: 2,
 }
 
 const HEADLINES = {
   [STAGES.makerReview]: ['Your application is under review', 'Our team is reviewing your details. This usually takes about 3 working days.'],
   [STAGES.checkerReview]: ['Almost there: verification in progress', 'Your details have been reviewed and are now being verified. We’ll email you as soon as your account is ready.'],
+  [STAGES.agreementSigned]: ['Agreement signed', 'Thank you. Your signed agreement is with our team; your account goes live after the final approval.'],
   [STAGES.approved]: ['Approved: setting up your account', 'Your application is approved. We’re creating your vendor account, which can take a little while.'],
   [STAGES.rejected]: ['Your application was not approved', 'Please contact support to discuss next steps.'],
   [STAGES.changeRequested]: ['Your change request has been sent', 'Our team will send your application back to you so you can make the changes yourself. You will get an email, and this page updates on its own.'],
@@ -79,7 +89,8 @@ export default function ApplicationStatusPage() {
   const [actionError, setActionError] = useState('')
   const rejected = stage === STAGES.rejected
   const changeRequested = stage === STAGES.changeRequested
-  const steps = changeRequested ? CHANGE_STEPS : STEPS
+  const signed = stage === STAGES.agreementSigned
+  const steps = changeRequested ? CHANGE_STEPS : signed ? SIGNED_STEPS : STEPS
   const requestedFields = profile?.change_request?.fields || []
   const completed = COMPLETED_STEPS[stage] ?? 0
   const [headline, subline] = HEADLINES[stage] || HEADLINES[STAGES.makerReview]
@@ -138,7 +149,7 @@ export default function ApplicationStatusPage() {
   const reasons = profile?.rejection?.items || []
   const overallRemark = profile?.rejection?.overall_remark
 
-  const expected = rejected || changeRequested ? null : expectedBy(profile?.submitted_at)
+  const expected = rejected || changeRequested || signed ? null : expectedBy(profile?.submitted_at)
   // `open` rows open what was submitted.
   const details = [
     // The request ID means nothing to a vendor under review; a closed application needs it to talk to support.
@@ -146,7 +157,7 @@ export default function ApplicationStatusPage() {
     ['Vendor', vendorName, true],
     ['Submitted', formatDate(profile?.submitted_at)],
     ...(expected ? [['Decision expected by', formatDate(expected)]] : []),
-    ['Status', rejected ? 'Not approved' : changeRequested ? 'Change requested' : 'In review'],
+    ['Status', rejected ? 'Not approved' : changeRequested ? 'Change requested' : signed ? 'Agreement signed' : 'In review'],
   ]
 
   return (
@@ -155,12 +166,12 @@ export default function ApplicationStatusPage() {
         <section className="overflow-hidden rounded-2xl border border-blue-200/80 bg-white shadow-[0_22px_60px_rgba(40,83,130,0.1)]">
           <div className={`px-6 py-7 sm:px-9 ${rejected ? 'bg-red-50' : 'bg-[#eef7ff]'}`}>
             <span className={`grid size-12 place-items-center rounded-full ${rejected ? 'bg-red-100 text-red-700' : 'bg-brand-100 text-brand-700'}`}>
-              {rejected ? <AlertCircle size={26} /> : changeRequested ? <PencilLine size={26} /> : <Clock3 size={26} />}
+              {rejected ? <AlertCircle size={26} /> : signed ? <FileSignature size={26} /> : changeRequested ? <PencilLine size={26} /> : <Clock3 size={26} />}
             </span>
-            <p className="eyebrow mt-5">{rejected ? 'Application closed' : changeRequested ? 'Change request' : 'Application status'}</p>
+            <p className="eyebrow mt-5">{rejected ? 'Application closed' : changeRequested ? 'Change request' : signed ? 'Agreement' : 'Application status'}</p>
             <h1 className="mt-2 text-2xl font-extrabold tracking-[-0.03em] text-navy-950 sm:text-3xl">{headline}</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">{subline}</p>
-            {(profile?.submission_round || 0) > 1 && !rejected && !changeRequested && (
+            {(profile?.submission_round || 0) > 1 && !rejected && !changeRequested && !signed && (
               <p className="mt-3 inline-flex rounded-full border border-blue-200 bg-white px-3 py-1 text-xs font-bold text-brand-700">
                 Resubmitted application
               </p>
@@ -272,6 +283,11 @@ export default function ApplicationStatusPage() {
                   </ul>
                 </section>
               )}
+              {profile?.declined_agreement && stage === STAGES.checkerReview && (
+                <p className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs leading-5 text-slate-700" role="note">
+                  You declined the agreement on {formatDate(profile.declined_agreement.declined_at)}: “{profile.declined_agreement.reason}”. Our team will review it and send you an updated agreement.
+                </p>
+              )}
               <div className="mt-4 flex flex-col gap-4 rounded-lg border border-blue-200 bg-brand-50 p-4 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-xs leading-5 text-slate-700">
                   <CheckCircle2 size={14} className="mr-1.5 inline -translate-y-px text-brand-600" />
@@ -279,7 +295,9 @@ export default function ApplicationStatusPage() {
                     ? 'This application is closed and cannot be reopened. You can apply again with a new application. Questions? Write to support@fourthsignal.com and mention your request ID.'
                     : changeRequested
                       ? 'Your application stays on hold until our team sends it back to you. You can cancel the request any time before then.'
-                      : 'Invoices and profile changes unlock once your account is approved. We’ll email you, and you can also come back to this page any time.'}
+                      : signed
+                        ? 'Our team now gives the final approval. We’ll email you as soon as your account is ready, and you can also come back to this page any time.'
+                        : 'Your application is in progress. We’ll email you as soon as there is an update, and you can come back to this page any time.'}
                 </p>
                 {rejected && <Button className="shrink-0" onClick={startNewApplication}>Start a new application</Button>}
                 {!rejected && (
@@ -293,7 +311,12 @@ export default function ApplicationStatusPage() {
                 <Button variant="secondary" className="min-h-9! w-full py-1.5! text-[13px]!" onClick={openProfile}>
                   <Eye size={15} /> View submitted details
                 </Button>
-                {!rejected && !changeRequested && (
+                {signed && (
+                  <Button variant="secondary" className="min-h-9! w-full py-1.5! text-[13px]!" onClick={() => navigate('/agreements')}>
+                    <FileSignature size={15} /> View agreement
+                  </Button>
+                )}
+                {!rejected && !changeRequested && !signed && (
                   <Button variant="secondary" className="min-h-9! w-full py-1.5! text-[13px]!" onClick={() => { setActionError(''); setRequestOpen(true) }}>
                     <PencilLine size={15} /> Request changes
                   </Button>

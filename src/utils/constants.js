@@ -1,3 +1,6 @@
+// Shown when the PAN (which comes from the GSTIN, so it is read-only) already belongs to another vendor.
+export const PAN_TAKEN_MESSAGE = 'A vendor with this PAN is already registered. The PAN comes from your GSTIN, so please check the GSTIN you entered.'
+
 export const FORM_STEPS = [
   { id: 1, title: 'Vendor', longTitle: 'Vendor Information' },
   { id: 2, title: 'Address', longTitle: 'Address Details' },

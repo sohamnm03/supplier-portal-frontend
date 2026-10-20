@@ -106,7 +106,7 @@ export default function VendorProfilePanel({ open, onClose, profile, onProfileRe
             </div>
             <div className="flex shrink-0 items-center gap-2">
               {readOnly
-                ? <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-800">{profile?.stage === 'rejected' ? 'Not approved' : profile?.stage === 'change_requested' ? 'Change requested' : 'In review'}</span>
+                ? <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-800">{profile?.stage === 'rejected' ? 'Not approved' : profile?.stage === 'change_requested' ? 'Change requested' : profile?.stage === 'agreement_signed' ? 'Agreement signed' : 'In review'}</span>
                 : profile?.status && <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-bold capitalize text-emerald-700">{profile.status}</span>}
               <button type="button" onClick={onClose} className="interactive-icon" aria-label="Close vendor profile"><X size={20} /></button>
             </div>

@@ -4,6 +4,10 @@ import InvoiceDashboardPage from '../pages/InvoiceDashboardPage'
 import UpdateRequestsPage from '../pages/UpdateRequestsPage'
 import VendorRequestPage from '../pages/VendorRequestPage'
 import ApplicationStatusPage from '../pages/ApplicationStatusPage'
+import AgreementSigningPage from '../pages/AgreementSigningPage'
+import AgreementsPage from '../pages/AgreementsPage'
+import AgreementRenewalPage from '../pages/AgreementRenewalPage'
+import VerifyAgreementPage from '../pages/VerifyAgreementPage'
 import NotFoundPage from '../pages/NotFoundPage'
 import ProtectedRoute from '../components/layout/ProtectedRoute'
 import { AuthProvider } from '../context/AuthContext'
@@ -18,6 +22,10 @@ export default function AppRoutes() {
         <Route path="/update-requests" element={<ProtectedRoute stages={[STAGES.active]}><UpdateRequestsPage /></ProtectedRoute>} />
         <Route path="/request-vendor" element={<ProtectedRoute stages={FORM_STAGES}><VendorRequestPage /></ProtectedRoute>} />
         <Route path="/application-status" element={<ProtectedRoute stages={WAITING_STAGES}><ApplicationStatusPage /></ProtectedRoute>} />
+        <Route path="/agreement" element={<ProtectedRoute stages={[STAGES.agreement]}><AgreementSigningPage /></ProtectedRoute>} />
+        <Route path="/agreements" element={<ProtectedRoute stages={[STAGES.active, STAGES.agreementSigned]}><AgreementsPage /></ProtectedRoute>} />
+        <Route path="/agreements/:id/sign" element={<ProtectedRoute stages={[STAGES.active]}><AgreementRenewalPage /></ProtectedRoute>} />
+        <Route path="/verify-agreement" element={<VerifyAgreementPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
     </AuthProvider>

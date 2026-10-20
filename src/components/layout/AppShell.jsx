@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { ArrowLeft, ChevronRight, FilePenLine, FileText, Home, LogOut } from 'lucide-react'
+import { ArrowLeft, ChevronRight, FileCheck2, FilePenLine, FileText, Home, LogOut } from 'lucide-react'
 import AppLogo from '../common/AppLogo'
 import useAuth from '../../hooks/useAuth'
 import VendorProfilePanel from './VendorProfilePanel'
@@ -10,6 +10,7 @@ import { STAGES, WAITING_STAGES, homeForStage } from '../../utils/stages'
 const NAV_ITEMS = [
   { to: '/invoices', label: 'Invoices', icon: FileText },
   { to: '/update-requests', label: 'Change Requests', icon: FilePenLine },
+  { to: '/agreements', label: 'Agreement', icon: FileCheck2 },
 ]
 
 export default function AppShell({ breadcrumb, children, backTo, onBack }) {
@@ -100,7 +101,7 @@ export default function AppShell({ breadcrumb, children, backTo, onBack }) {
               <p className="h-4 whitespace-nowrap px-3 pb-2 text-[11px] font-bold uppercase tracking-[0.06em] text-slate-500 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">Workspace</p>
               <nav className="mt-2 flex flex-col gap-1">
                 {NAV_ITEMS.map(({ to, label, icon: Icon }) => {
-                  const active = location.pathname === to
+                  const active = location.pathname === to || (to === '/agreements' && location.pathname.startsWith('/agreements/'))
                   return (
                     <Link key={to} to={to} title={label} aria-label={label} aria-current={active ? 'page' : undefined} className={`flex w-10 items-center gap-3 overflow-hidden rounded-lg px-[11px] py-2.5 text-[13px] transition-[width,background-color,color] group-hover:w-full group-focus-within:w-full ${active ? 'bg-brand-50 text-brand-700' : 'text-slate-600 hover:bg-slate-50 hover:text-navy-900'}`}>
                       <Icon size={18} className="shrink-0" />
@@ -117,7 +118,7 @@ export default function AppShell({ breadcrumb, children, backTo, onBack }) {
           {showSidebar && (
             <nav className="no-print flex gap-1 overflow-x-auto border-b border-slate-200 bg-white/90 px-3 py-2 md:hidden" aria-label="Sections">
               {NAV_ITEMS.map(({ to, label }) => (
-                <Link key={to} to={to} className={`shrink-0 rounded-md px-3 py-1.5 text-xs font-semibold ${location.pathname === to ? 'bg-brand-50 text-brand-700' : 'text-slate-600'}`}>{label}</Link>
+                <Link key={to} to={to} className={`shrink-0 rounded-md px-3 py-1.5 text-xs font-semibold ${location.pathname.startsWith(to) ? 'bg-brand-50 text-brand-700' : 'text-slate-600'}`}>{label}</Link>
               ))}
             </nav>
           )}

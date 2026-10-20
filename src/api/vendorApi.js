@@ -295,6 +295,17 @@ export async function getInvoiceReturnReasons(invoiceId) {
   return body
 }
 
+// Reads a new file for a returned invoice and gives back its details (nothing is saved), so they can be compared with the
+// invoice being replaced before it is overwritten. Resolves to an invoice-shaped object.
+export async function previewInvoiceReplacement(invoiceId, file) {
+  const formData = new FormData()
+  formData.append('invoices', file)
+  const response = await authFetch(`/invoices/${invoiceId}/replace-preview`, { method: 'POST', body: formData })
+  const body = await response.json().catch(() => null)
+  if (!response.ok || !body?.invoice) throw new Error(body?.error || body?.message || 'The new file could not be read.')
+  return body.invoice
+}
+
 // Uploads the corrected file for a returned invoice; the same invoice is overwritten and goes back for approval.
 export async function replaceInvoice(invoiceId, file) {
   const formData = new FormData()
@@ -421,3 +432,92 @@ export function verifyEmailOtp(verificationId, otp) {
 export function getEmailVerificationStatus(verificationId) {
   return emailVerificationRequest(`/${encodeURIComponent(verificationId)}/status`, undefined, 'Unable to check the verification status.')
 }
+
+// ---- Vendor agreement signing -------------------------------------------------------------------------------------
+// Every failure throws Error(body.error) with `status`, `body` and, for a 429, `retryAfter` seconds.
+async function agreementError(response, fallback) {
+  const body = await response.json().catch(() => null)
+  const error = new Error(body?.error || body?.message || fallback)
+  error.status = response.status
+  error.body = body
+  error.retryAfter = Number(body?.retry_after ?? response.headers.get('Retry-After')) || 0
+  return error
+}
+
+async function agreementCall(path, options, fallback) {
+  let response
+  try {
+    response = await authFetch(path, options)
+  } catch {
+    throw new Error(fallback)
+  }
+  if (!response.ok) throw await agreementError(response, fallback)
+  return response.json().catch(() => ({}))
+}
+
+// The vendor's agreements (sent and signed only), newest first.
+export async function getMyAgreements() {
+  const body = await agreementCall('/vendors/me/agreements', undefined, 'Unable to load your agreements.')
+  return Array.isArray(body) ? body : []
+}
+
+async function agreementPdfBlob(id, download) {
+  let response
+  try {
+    response = await authFetch(`/vendors/me/agreements/${id}/pdf${download ? '?download=1' : ''}`)
+  } catch {
+    throw new Error('Unable to load the agreement. Please try again.')
+  }
+  if (!response.ok) throw await agreementError(response, 'Unable to load the agreement. Please try again.')
+  return response.blob()
+}
+
+// A blob: URL for the PDF (the caller revokes it with URL.revokeObjectURL when done).
+export async function fetchAgreementPdfUrl(id) {
+  const blob = await agreementPdfBlob(id, false)
+  return URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }))
+}
+
+export async function downloadAgreement(id, agreementNo) {
+  const blob = await agreementPdfBlob(id, true)
+  const url = URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }))
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `${agreementNo || `agreement-${id}`}.pdf`
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 10000)
+}
+
+export const sendAgreementCode = (id) => agreementCall(`/vendors/me/agreements/${id}/send-code`, { method: 'POST' }, 'Unable to send the code. Please try again.')
+
+export const verifyAgreementCode = (id, otp) => agreementCall(`/vendors/me/agreements/${id}/verify-code`, jsonRequest('POST', { otp }), 'Unable to verify the code. Please try again.')
+
+export const signAgreement = (id, payload) => agreementCall(`/vendors/me/agreements/${id}/sign`, jsonRequest('POST', payload), 'Unable to sign the agreement. Please try again.')
+
+export const declineAgreement = (id, reason, atStep = 'sign') => agreementCall(`/vendors/me/agreements/${id}/decline`, jsonRequest('POST', { reason, at_step: atStep }), 'Unable to send your response. Please try again.')
+
+export const changePassword = (currentPassword, newPassword) => agreementCall('/vendors/me/password', jsonRequest('POST', { current_password: currentPassword, new_password: newPassword }), 'Unable to change your password. Please try again.')
+
+// Public (no login): is this agreement number and fingerprint a genuine signed agreement?
+export async function verifyAgreementPublic(no, h) {
+  const params = new URLSearchParams({ no: no || '', h: h || '' })
+  let response
+  try {
+    response = await fetch(`${API_BASE_URL}/agreements/verify?${params}`)
+  } catch {
+    throw new Error('Unable to reach the verification service. Please try again.')
+  }
+  const body = await response.json().catch(() => null)
+  if (!response.ok) {
+    const error = new Error(body?.error || 'Unable to verify the agreement. Please try again.')
+    error.status = response.status
+    error.body = body
+    throw error
+  }
+  return body || { valid: false }
+}
+
+// The agreement PDF as a Blob (the reading view makes its own blob: URL and reads the page count from it).
+export const fetchAgreementPdfBlob = (id) => agreementPdfBlob(id, false)

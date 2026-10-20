@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { vendorRequestSchema } from '../schemas/vendorRequestSchema'
 import { DEFAULT_COUNTRY_CODE } from '../data/countryCodes'
 import { toFormValues } from '../api/vendorApi'
+import { PAN_TAKEN_MESSAGE } from '../utils/constants'
 
 const defaults = {
   vendorLegalName: '', vendorPhoneCode: DEFAULT_COUNTRY_CODE, vendorPhone: '', vendorEmail: '', vendorType: '', yearEstablished: '', currency: 'INR', registrationNumber: '', msmeStatus: 'Not registered', assignedRm: '', udyamNumber: '',
@@ -17,7 +18,7 @@ const defaults = {
 // resolver below keeps reporting it as an error, so the message stays for as long as the taken value is in the field.
 // (A plain manual error is wiped the moment the field is validated again - e.g. when you click out of it.)
 const TAKEN_RULES = [
-  ['pan', 'This PAN already exists.', (value) => String(value ?? '').trim().toUpperCase()],
+  ['pan', PAN_TAKEN_MESSAGE, (value) => String(value ?? '').trim().toUpperCase()],
 ]
 
 // The onboarding form, started from what the vendor has already saved (their signup details, a saved draft, or the

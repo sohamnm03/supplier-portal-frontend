@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
   AlertCircle,
@@ -23,6 +23,8 @@ import { statusDetails } from '../../utils/invoiceStatus'
 import ReplaceInvoiceModal from './ReplaceInvoiceModal'
 import InvoicePagination from './InvoicePagination'
 import { CompareOverlay, loadInvoicePdfUrl, pdfSrc } from './InvoiceCompare'
+import { pick, display, numberValue, amount, dateValue, invoiceNumber, vendorName, vendorGstin, vendorGstinVerified, totalValue, FlaggedContext, tabOfField } from './invoiceFields'
+import { DetailSection, Field, Overview, Amounts } from './invoiceDetailViews'
 import SortableHeaderCell from '../../utils/SortableHeaderCell'
 import { nextSortState, sortRows } from '../../utils/tableSort'
 
@@ -33,52 +35,6 @@ const LINK_XS_BOLD = { fontSize: '0.75rem', lineHeight: '1rem', fontWeight: 700 
 const BTN_XS_BOLD = { fontSize: '0.75rem', lineHeight: '1rem', fontWeight: 600 }
 const BTN_11_SEMI = { fontSize: '0.6875rem', lineHeight: '1rem', fontWeight: 600 }
 
-
-const rawItems = (invoice) => {
-  const value = invoice.mainLineItemData ?? invoice.main_line_item_data ?? invoice.line_items ?? invoice.line_item_data
-  if (!value) return []
-  return Array.isArray(value) ? value : [value]
-}
-
-const firstData = (invoice) => rawItems(invoice)[0] || {}
-const pick = (invoice, keys, fallback = '') => {
-  const detail = firstData(invoice)
-  for (const key of keys) {
-    const value = invoice?.[key] ?? detail?.[key]
-    if (value !== undefined && value !== null && value !== '') return value
-  }
-  return fallback
-}
-
-const display = (value) => (value === undefined || value === null || value === '' ? '' : String(value))
-const numberValue = (value) => {
-  if (typeof value === 'number') return Number.isFinite(value) ? value : null
-  const parsed = Number(String(value ?? '').replace(/[^0-9.-]/g, ''))
-  return Number.isFinite(parsed) ? parsed : null
-}
-const amount = (value, currency = 'INR') => {
-  const parsed = numberValue(value)
-  if (parsed === null) return ''
-  return new Intl.NumberFormat('en-IN', { style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(parsed)
-}
-const dateValue = (value) => {
-  if (!value) return ''
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
-}
-
-const invoiceNumber = (invoice) => pick(invoice, ['invoice_number', 'invoice_no', 'invoice_id'])
-const vendorName = (invoice) => pick(invoice, ['vendor_name', 'extracted_vendor_name', 'supplier_name'], 'Vendor invoice')
-const cleanGstin = (value) => (value ? String(value).replace(/^[\s:;.-]+/, '').trim() : value)
-const vendorGstin = (invoice) => cleanGstin(pick(invoice, ['vendor_tax_id', 'vendor_gstin', 'supplier_gstin', 'gstin']))
-const vendorGstinVerified = (invoice) => Boolean(pick(invoice, ['vendor_gstin_verified']))
-const customerGstin = (invoice) => cleanGstin(pick(invoice, ['customer_tax_id', 'customer_gstin', 'billing_gstin', 'buyer_gstin']))
-const totalValue = (invoice) => {
-  const direct = pick(invoice, ['total_amount', 'invoice_total', 'amount'], null)
-  if (direct !== null) return direct
-  const values = rawItems(invoice).map((item) => numberValue(item?.total_amount ?? item?.taxable_amount ?? item?.amount) || 0)
-  return values.length ? values.reduce((sum, value) => sum + value, 0) : null
-}
 
 // Newest uploads first; fall back to the (numeric) id when timestamps are equal or missing.
 const byNewestUpload = (a, b) => {
@@ -642,7 +598,7 @@ function InvoiceDetailModal({ preview, onClose, onReplace, replaceBusy = false, 
             {(replaceError || stageError) && <p className="w-full text-xs font-semibold text-red-600">{replaceError || stageError}</p>}
           </footer>
         )}
-        {compareOpen && staged && <CompareOverlay currentUrl={url} loading={loading} file={staged} invoiceNumber={display(invoiceNumber(invoice))} onClose={() => setCompareOpen(false)} onOverwrite={() => { setCompareOpen(false); onReplace(preview.invoice, staged) }} />}
+        {compareOpen && staged && <CompareOverlay invoice={invoice} currentUrl={url} loading={loading} file={staged} invoiceNumber={display(invoiceNumber(invoice))} onClose={() => setCompareOpen(false)} onOverwrite={() => { setCompareOpen(false); onReplace(preview.invoice, staged) }} />}
         {replaceBusy && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-white/85 backdrop-blur-[1px]" role="status" aria-live="polite">
             <LoaderCircle size={34} className="animate-spin text-[#1769e8]" />
@@ -667,89 +623,6 @@ function InvoiceDetailModal({ preview, onClose, onReplace, replaceBusy = false, 
   )
 }
 
-
-function DetailSection({ title, children }) {
-  return <section className="mb-3.5 rounded-lg border border-[#cfdae7] bg-white px-3.5 py-2.5"><div className="mb-3 flex items-center gap-2 border-b border-[#cfdae7] pb-2"><span className="size-1 rounded-full bg-sky-500" /><h3 className="text-[11px] font-bold uppercase tracking-[0.05em] text-[#526d89]">{title}</h3></div>{children}</section>
-}
-function Field({ label, value, wide = false, fieldKey }) {
-  return <div className={wide ? 'sm:col-span-2' : ''}><Flagged fieldKey={fieldKey}><p className="text-[11px] font-semibold uppercase tracking-[0.03em] text-[#607a98]">{label}</p><p className="mt-1.5 min-h-5 break-words text-[13px] font-medium leading-5 text-[#102a4c]">{display(value)}</p></Flagged></div>
-}
-
-// The fields the reviewer flagged when sending the invoice back (and that are still to be corrected), marked in the detail.
-const FlaggedContext = createContext(new Set())
-const OVERVIEW_FIELDS = new Set(['vendor_name', 'vendor_tax_id', 'vendor_address', 'customer_name', 'customer_tax_id', 'billing_address', 'invoice_number', 'invoice_date', 'due_date', 'payment_term', 'currency'])
-const AMOUNT_FIELDS = new Set(['subtotal', 'total_tax', 'total_amount', 'line_items'])
-const tabOfField = (fieldKey) => (OVERVIEW_FIELDS.has(fieldKey) ? 'overview' : AMOUNT_FIELDS.has(fieldKey) ? 'amounts' : null)
-
-// The red frame sits outside the field (padding and an equal negative margin keep the field where it was).
-function Flagged({ fieldKey, children, className = '' }) {
-  const flagged = useContext(FlaggedContext)
-  if (!fieldKey || !flagged.has(fieldKey)) return className ? <div className={className}>{children}</div> : children
-  return <div data-flagged-field={fieldKey} className={`-m-2 rounded-lg border-[1.5px] border-red-500 bg-red-50/60 p-2 ${className}`}>{children}</div>
-}
-
-function Overview({ invoice }) {
-  return (
-    <>
-      <DetailSection title="Vendor"><div className="grid gap-4 sm:grid-cols-2"><Field label="Vendor Name" value={vendorName(invoice)} fieldKey="vendor_name" /><Field label="GSTIN" value={vendorGstin(invoice)} fieldKey="vendor_tax_id" /><Field wide label="Address" value={pick(invoice, ['vendor_address', 'supplier_address', 'address'])} fieldKey="vendor_address" /></div></DetailSection>
-      <DetailSection title="Customer / Billing"><div className="grid gap-4 sm:grid-cols-2"><Field label="Customer Name" value={pick(invoice, ['customer_name', 'billing_name', 'buyer_name'])} fieldKey="customer_name" /><Field label="GSTIN" value={customerGstin(invoice)} fieldKey="customer_tax_id" /><Field wide label="Address" value={pick(invoice, ['customer_address', 'billing_address', 'buyer_address'])} fieldKey="billing_address" /></div></DetailSection>
-      <DetailSection title="Invoice / Payment"><div className="grid gap-4 sm:grid-cols-2"><Field label="Invoice No." value={invoiceNumber(invoice)} fieldKey="invoice_number" /><Field label="System Invoice Ref." value={pick(invoice, ['inv_ref_gen'])} /><Field label="Currency" value={pick(invoice, ['currency'], 'INR')} fieldKey="currency" /><Field label="Invoice Date" value={dateValue(pick(invoice, ['invoice_date']))} fieldKey="invoice_date" /><Field label="Due Date" value={dateValue(pick(invoice, ['due_date']))} fieldKey="due_date" /><Field label="Payment Term" value={pick(invoice, ['payment_term', 'payment_terms'])} fieldKey="payment_term" /></div></DetailSection>
-    </>
-  )
-}
-
-const taxRate = (tax) => {
-  const value = tax.rate ?? tax.tax_rate
-  if (value === undefined || value === null || value === '') return ''
-  return String(value).trim().endsWith('%') ? value : `${value}%`
-}
-
-function Amounts({ invoice }) {
-  const currency = pick(invoice, ['currency'], 'INR')
-  const lineItems = rawItems(invoice)
-  const taxes = pick(invoice, ['tax_details', 'taxes'], [])
-  const taxRows = Array.isArray(taxes) ? taxes : []
-  return (
-    <>
-      <DetailSection title="Amounts">
-        <div className="grid gap-3 sm:grid-cols-3">
-          <AmountTile label="Sub Total" fieldKey="subtotal" value={amount(pick(invoice, ['sub_total', 'subtotal', 'taxable_amount'], null), currency)} />
-          <AmountTile label="Total Tax" fieldKey="total_tax" value={amount(pick(invoice, ['total_tax', 'tax_amount'], null), currency)} />
-          <AmountTile label="Total Amount" fieldKey="total_amount" value={amount(totalValue(invoice), currency)} highlight />
-        </div>
-        {taxRows.length > 0 && <MiniTable headers={['Tax', 'Rate', 'Amount']} aligns={['center', 'center', 'right']} widths={['40%', '25%', '35%']} rows={taxRows.map((tax) => [tax.tax_desc ?? tax.tax_description ?? tax.name, taxRate(tax), amount(tax.amount ?? tax.tax_amount, currency)])} />}
-      </DetailSection>
-      <DetailSection title={`Line Items — ${display(invoiceNumber(invoice))}`}><Flagged fieldKey="line_items"><MiniTable headers={['#', 'Description', 'Qty', 'Unit Price', 'Amount']} aligns={['center', 'left', 'center', 'center', 'right']} widths={['3.5rem', null, '5rem', '8rem', '9rem']} rows={lineItems.map((item, index) => [index + 1, display(item.description ?? item.item_description), display(item.quantity), amount(item.unit_price, currency), amount(item.total_amount ?? item.taxable_amount ?? item.amount, currency)])} empty="No extracted line items are available." /></Flagged></DetailSection>
-    </>
-  )
-}
-
-const CELL_ALIGN = { left: 'text-left', center: 'text-center', right: 'text-right' }
-
-// Headers are always centered; body cells follow `aligns` (only amount columns are right-aligned).
-function AmountTile({ label, value, highlight = false, fieldKey }) {
-  return (
-    <Flagged fieldKey={fieldKey}>
-    <div className={`rounded-lg border px-3.5 py-3 ${highlight ? 'border-[#bcd6fb] bg-[#eef5fd]' : 'border-[#e3ebf4] bg-[#fbfcfe]'}`}>
-      <p className="text-[11px] font-semibold uppercase tracking-[0.03em] text-[#607a98]">{label}</p>
-      <p className={`mt-1.5 text-[15px] font-semibold ${highlight ? 'text-[#1769e8]' : 'text-[#102a4c]'}`}>{value}</p>
-    </div>
-    </Flagged>
-  )
-}
-
-function MiniTable({ headers, rows, aligns = [], widths = [], compact = false, empty = '' }) {
-  if (!rows.length) return empty ? <p className="py-5 text-center text-xs text-slate-500">{empty}</p> : null
-  return (
-    <div className="mt-3 overflow-x-auto">
-      <table className={`table-fixed border-collapse ${compact ? 'w-full max-w-[24rem]' : 'w-full min-w-[460px]'}`}>
-        <colgroup>{headers.map((header, index) => <col key={header} style={widths[index] ? { width: widths[index] } : undefined} />)}</colgroup>
-        <thead><tr>{headers.map((header) => <th key={header} className="border-b border-[#cfdae7] px-2 py-2 text-center text-[11px] font-semibold uppercase tracking-[0.03em] text-[#607a98]">{header}</th>)}</tr></thead>
-        <tbody>{rows.map((row, index) => <tr key={index}>{row.map((cell, cellIndex) => <td key={cellIndex} className={`border-b border-[#cfdae7] px-2 py-2 text-[13px] text-[#102a4c] ${CELL_ALIGN[aligns[cellIndex] || 'left']} ${aligns[cellIndex] === 'right' ? 'pr-4' : ''}`}>{display(cell)}</td>)}</tr>)}</tbody>
-      </table>
-    </div>
-  )
-}
 
 function PreviewMessage({ icon, title, detail }) {
   return <div className="flex h-full min-h-[260px] flex-col items-center justify-center gap-2 px-6 text-center text-[#66809e]">{icon}<p className="text-xs font-semibold text-[#1265c8]">{title}</p><p className="max-w-xs text-[11px]">{detail}</p></div>

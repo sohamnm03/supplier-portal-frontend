@@ -18,7 +18,7 @@ import SupportingDocuments from '../components/vendor-request/SupportingDocument
 import useVendorRequest from '../hooks/useVendorRequest'
 import useAuth from '../hooks/useAuth'
 import useIdentityVerification from '../hooks/useIdentityVerification'
-import { FORM_STEPS, STEP_FIELDS } from '../utils/constants'
+import { FORM_STEPS, PAN_TAKEN_MESSAGE, STEP_FIELDS } from '../utils/constants'
 import { KEY_BY_FORM_FIELD, buildFlags, stepOfFlag } from '../utils/rejectionFields'
 import { STAGES } from '../utils/stages'
 import { isValidPhone } from '../data/countryCodes'
@@ -223,7 +223,7 @@ export default function VendorRequestPage() {
         setPanTaken(panExists)
         form.takenRef.current = { ...form.takenRef.current, pan: panExists ? normalizedPan : '' }
         if (panExists) {
-          setError('pan', { type: 'manual', message: 'This PAN already exists.' })
+          setError('pan', { type: 'manual', message: PAN_TAKEN_MESSAGE })
           return
         }
         clearErrors('pan')

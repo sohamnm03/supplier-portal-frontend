@@ -18,6 +18,12 @@ export default function useDuplicateCheck({ value, isValid, checkFn, message, fi
     // null = the latest value has not been checked yet; true / false once the server has answered.
     onChecked?.(null)
     if (!value || !isValid) {
+      // An empty field has nothing to be "taken"; drop the earlier answer and its error so it cannot linger.
+      if (!value) {
+        if (takenRef) takenRef.current[fieldName] = ''
+        if (takenRef) takenRef.current[`${fieldName}Message`] = ''
+        clearErrors(fieldName)
+      }
       setChecking(false)
       return undefined
     }

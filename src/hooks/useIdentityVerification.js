@@ -62,7 +62,14 @@ export default function useIdentityVerification(values, trusted = null) {
       // The field was edited while this was in flight: the answer belongs to a value that is no longer there.
       if (normalise(latest.current[FORM_FIELD[service]]) !== value) return null
       if (!result.verified) return fail(result.message || `This ${label} could not be verified.`)
-      setFailures((all) => ({ ...all, [service]: undefined }))
+      // A verified GSTIN fills in the PAN written inside it. When that PAN could not be verified automatically, the reason
+      // belongs under the PAN field (never the GSTIN) and lasts as long as the field holds that PAN.
+      const filledPan = service === 'GSTIN' ? SHAPES.PAN.normalise(result.fill?.pan) : ''
+      setFailures((all) => ({
+        ...all,
+        [service]: undefined,
+        ...(service === 'GSTIN' ? { PAN: !result.pan_verified && result.pan_message && filledPan ? { value: filledPan, message: result.pan_message } : undefined } : {}),
+      }))
       setVerified((all) => ({
         ...all,
         [service]: value,

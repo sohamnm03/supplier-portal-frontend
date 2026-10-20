@@ -4,7 +4,12 @@ import { statusDetails } from '../../utils/invoiceStatus'
 // The same dot colours as the status summary in the enterprise app (approved green, in-progress amber, problems red, other blue).
 const DOT = { Approved: '#1f7c64', Processing: '#936716', 'Needs correction': '#bf4252', Failed: '#bf4252', Rejected: '#bf4252', Ready: '#316fbb' }
 
-// Total plus a count per status that actually has invoices, biggest first.
+// Total first, then what needs the vendor to act (correct, retry, submit), then what is in progress, then the outcomes,
+// with Rejected last. A status that is not listed goes after these, biggest first.
+const ORDER = ['Needs correction', 'Failed', 'Ready', 'Processing', 'Approved', 'Rejected']
+const position = (label) => (ORDER.includes(label) ? ORDER.indexOf(label) : ORDER.length)
+
+// Total plus a count per status that actually has invoices, in that order.
 export default function InvoiceKpis({ invoices }) {
   const summary = useMemo(() => {
     const counts = new Map()
@@ -12,7 +17,7 @@ export default function InvoiceKpis({ invoices }) {
       const { label } = statusDetails(invoice)
       counts.set(label, (counts.get(label) ?? 0) + 1)
     })
-    return [...counts.entries()].sort((a, b) => b[1] - a[1])
+    return [...counts.entries()].sort((a, b) => position(a[0]) - position(b[0]) || b[1] - a[1])
   }, [invoices])
 
   if (!invoices.length) return null
