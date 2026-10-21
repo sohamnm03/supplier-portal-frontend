@@ -1,9 +1,9 @@
 import { useState } from 'react'
-import { Clock3, FileSignature, FileText, PartyPopper, PenLine, ShieldCheck, UserCheck } from 'lucide-react'
+import { Check, Clock3, Eye, EyeOff, FileSignature, FileText, KeyRound, PartyPopper, PenLine, ShieldCheck, UserCheck } from 'lucide-react'
 import Button from '../common/Button'
 import Loader from '../common/Loader'
 import { changePassword } from '../../api/vendorApi'
-import { CHECK_ROW, SMALL_BUTTON } from './agreementUtils'
+import { SMALL_BUTTON } from './agreementUtils'
 
 const field = 'mb-1 block text-[11px] font-bold uppercase tracking-[0.04em] text-navy-900'
 const OVERVIEW = [
@@ -11,6 +11,56 @@ const OVERVIEW = [
   { icon: FileText, title: 'Read the agreement', text: 'See the key terms at a glance, then read the full agreement.', hint: 'About 1 minute' },
   { icon: PenLine, title: 'Sign', text: 'Add your signature and confirm it with a code sent to your email.', hint: 'About 1 minute' },
 ]
+
+const OPTIONS = [
+  ['keep', 'Keep the password I was sent', 'Use the password from your welcome email. You can change it later.'],
+  ['new', 'Choose a new password', 'Recommended: pick one only you know.'],
+]
+
+// A rough strength reading for the new password: length first, then a mix of letters, digits and symbols.
+function strengthOf(value) {
+  if (!value) return { score: 0, label: '' }
+  if (value.length < 8) return { score: 0, label: 'Too short' }
+  let score = 1
+  if (value.length >= 12) score += 1
+  if (/[a-z]/.test(value) && /[A-Z]/.test(value)) score += 1
+  if (/\d/.test(value) && /[^A-Za-z0-9]/.test(value)) score += 1
+  return { score, label: ['Too short', 'Weak', 'Fair', 'Good', 'Strong'][score] }
+}
+
+const STRENGTH_TONE = ['bg-slate-200', 'bg-red-400', 'bg-amber-400', 'bg-emerald-400', 'bg-emerald-600']
+
+// A password box with a show / hide toggle.
+function PasswordField({ id, label, value, onChange, autoComplete, maxLength, children }) {
+  const [shown, setShown] = useState(false)
+  return (
+    <div>
+      <label htmlFor={id} className={field}>{label}</label>
+      <div className="relative">
+        <input id={id} type={shown ? 'text' : 'password'} className="app-field pr-10" autoComplete={autoComplete} maxLength={maxLength} value={value} onChange={(event) => onChange(event.target.value)} />
+        <button
+          type="button"
+          onClick={() => setShown((prev) => !prev)}
+          aria-label={shown ? `Hide ${label.toLowerCase()}` : `Show ${label.toLowerCase()}`}
+          aria-pressed={shown}
+          className="absolute inset-y-0 right-0 grid w-10 place-items-center rounded-r-lg text-slate-500 transition hover:text-navy-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-600/40"
+        >
+          {shown ? <EyeOff size={16} /> : <Eye size={16} />}
+        </button>
+      </div>
+      {children}
+    </div>
+  )
+}
+
+function Rule({ ok, children }) {
+  return (
+    <li className={`flex items-center gap-1.5 text-xs ${ok ? 'font-semibold text-emerald-700' : 'text-slate-500'}`}>
+      <span className={`grid size-4 shrink-0 place-items-center rounded-full ${ok ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'}`}>{ok ? <Check size={11} strokeWidth={3} /> : <span className="size-1 rounded-full bg-slate-400" />}</span>
+      {children}
+    </li>
+  )
+}
 
 // The first screen of the agreement flow, for every vendor. Maker-created vendors also get the optional password choice.
 export default function AgreementWelcome({ vendorName, email, selfService, agreement, onStart }) {
@@ -22,6 +72,7 @@ export default function AgreementWelcome({ vendorName, email, selfService, agree
   const [error, setError] = useState('')
 
   const months = agreement?.key_terms?.term_months
+  const strength = strengthOf(next)
 
   const problem = (() => {
     if (choice !== 'new') return ''
@@ -86,35 +137,51 @@ export default function AgreementWelcome({ vendorName, email, selfService, agree
       </ol>
 
       {!selfService && (
-        <section className="overflow-hidden rounded-lg border border-[#dce6f1] bg-white" aria-label="Set your own password">
-          <div className="border-b border-blue-100 bg-[#eef7ff] px-4 py-2">
-            <h3 className="text-[13px] font-extrabold text-navy-900">Set your own password</h3>
-            <p className="text-xs text-slate-600">Optional. You can also change it later.</p>
+        <section className="overflow-hidden rounded-xl border border-[#dce6f1] bg-white" aria-label="Set your own password">
+          <div className="flex items-center gap-3 border-b border-blue-100 bg-[#eef7ff] px-4 py-2.5">
+            <span className="grid size-8 shrink-0 place-items-center rounded-full bg-brand-600 text-white"><KeyRound size={15} /></span>
+            <div className="min-w-0">
+              <h3 className="text-[13px] font-extrabold text-navy-900">Set your own password</h3>
+              <p className="text-xs text-slate-600">Optional. You can also change it later from your profile.</p>
+            </div>
           </div>
-          <div className="space-y-2 px-4 py-3">
-            <div className="grid gap-2 md:grid-cols-2">
-              {[['keep', 'Keep the password I was sent'], ['new', 'Choose a new password']].map(([value, text]) => (
-                <label key={value} className={CHECK_ROW}>
-                  <input type="radio" name="password-choice" className="mt-0.5 size-4.5 shrink-0 accent-brand-600" checked={choice === value} onChange={() => { setChoice(value); setError('') }} />
-                  <span className="text-[13px] font-semibold leading-5 text-navy-900">{text}</span>
-                </label>
-              ))}
+          <div className="space-y-3 px-4 py-3.5">
+            <div role="radiogroup" aria-label="Password choice" className="grid gap-2.5 md:grid-cols-2">
+              {OPTIONS.map(([value, title, hint]) => {
+                const on = choice === value
+                return (
+                  <label key={value} className={`flex cursor-pointer items-start gap-3 rounded-xl border px-3.5 py-3 transition ${on ? 'border-brand-600 bg-[#eef6ff] ring-1 ring-brand-600' : 'border-[#dce6f1] bg-[#f7fafd] hover:border-slate-300'}`}>
+                    <input type="radio" name="password-choice" className="mt-0.5 size-4.5 shrink-0 accent-brand-600" checked={on} onChange={() => { setChoice(value); setError('') }} />
+                    <span className="min-w-0">
+                      <span className="block text-[13px] font-extrabold leading-5 text-navy-900">{title}</span>
+                      <span className="block text-xs leading-5 text-slate-600">{hint}</span>
+                    </span>
+                  </label>
+                )
+              })}
             </div>
             {choice === 'new' && (
-              <div className="grid gap-3 pt-1 md:grid-cols-3">
-                <div>
-                  <label htmlFor="pw-current" className={field}>Current password</label>
-                  <input id="pw-current" type="password" className="app-field" autoComplete="current-password" value={current} onChange={(event) => setCurrent(event.target.value)} />
+              <div className="grid gap-4 border-t border-slate-100 pt-3.5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.9fr)]">
+                <PasswordField id="pw-current" label="Current password" value={current} onChange={setCurrent} autoComplete="current-password">
+                  <p className="mt-1 text-[11px] text-slate-500">The one from your welcome email.</p>
+                </PasswordField>
+                <div className="space-y-3">
+                  <PasswordField id="pw-new" label="New password" value={next} onChange={setNext} autoComplete="new-password" maxLength={64}>
+                    <div className="mt-1.5" aria-live="polite">
+                      <div className="flex gap-1" aria-hidden="true">
+                        {[1, 2, 3, 4].map((step) => <span key={step} className={`h-1.5 flex-1 rounded-full transition ${strength.score >= step ? STRENGTH_TONE[strength.score] : 'bg-slate-200'}`} />)}
+                      </div>
+                      <p className="mt-1 text-[11px] font-semibold text-slate-500">{next ? `Strength: ${strength.label}` : '8 to 64 characters.'}</p>
+                    </div>
+                  </PasswordField>
+                  <PasswordField id="pw-confirm" label="Confirm new password" value={confirm} onChange={setConfirm} autoComplete="new-password" maxLength={64} />
                 </div>
-                <div>
-                  <label htmlFor="pw-new" className={field}>New password</label>
-                  <input id="pw-new" type="password" className="app-field" autoComplete="new-password" maxLength={64} value={next} onChange={(event) => setNext(event.target.value)} />
-                  <p className="mt-1 text-[11px] text-slate-500">8 to 64 characters.</p>
-                </div>
-                <div>
-                  <label htmlFor="pw-confirm" className={field}>Confirm new password</label>
-                  <input id="pw-confirm" type="password" className="app-field" autoComplete="new-password" maxLength={64} value={confirm} onChange={(event) => setConfirm(event.target.value)} />
-                </div>
+                <ul className="space-y-1.5 self-start rounded-xl border border-[#dce6f1] bg-[#f7fafd] px-3.5 py-3" aria-label="Password requirements">
+                  <li className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-500">Your new password</li>
+                  <Rule ok={next.length >= 8 && next.length <= 64}>Is 8 to 64 characters</Rule>
+                  <Rule ok={Boolean(next) && Boolean(current) && next !== current}>Differs from the current one</Rule>
+                  <Rule ok={Boolean(next) && next === confirm}>Matches the confirmation</Rule>
+                </ul>
               </div>
             )}
           </div>
