@@ -1,24 +1,40 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { AlertTriangle, ArrowLeft, CalendarCheck, CalendarPlus, CalendarClock, CalendarRange, Download, Eye, FilePenLine, FileSignature, LifeBuoy, Mail, PenLine, RefreshCw, Send } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, ArrowRight, CalendarCheck, CheckCircle2, CalendarPlus, CalendarClock, CalendarRange, Download, Eye, FilePenLine, FileSignature, PenLine, RefreshCw, Send } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import PageContainer from '../components/layout/PageContainer'
 import Button from '../components/common/Button'
 import Loader from '../components/common/Loader'
 import AgreementViewDialog from '../components/agreement/AgreementViewDialog'
-import { SMALL_BUTTON, STATE_BADGES, daysLeft, formatDate, formatPeriod, keyTermTiles } from '../components/agreement/agreementUtils'
+import { SMALL_BUTTON, STATE_BADGES, daysLeft, formatDate, formatPeriod } from '../components/agreement/agreementUtils'
 import { downloadAgreement, getMyAgreements } from '../api/vendorApi'
 import useAuth from '../hooks/useAuth'
 import { STAGES } from '../utils/stages'
 
 const EXPIRY_WARNING_DAYS = 60
-const SUPPORT_EMAIL = 'support@fourthsignal.com'
-const card = 'overflow-hidden rounded-lg border border-[#dce6f1] bg-white'
-const cardHeading = 'border-b border-[#dce6f1] bg-[#eef7ff] px-4 py-2.5 text-[11px] font-bold uppercase tracking-[0.04em] text-[#29466a]'
+const BTN = 'inline-flex h-9 items-center justify-center gap-2 rounded-lg! px-3.5 text-[13px]! font-semibold! leading-none! transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-600/40 disabled:cursor-not-allowed disabled:opacity-50 border'
+const BTN_PRIMARY = 'border-brand-600 bg-brand-600 text-white hover:border-brand-700 hover:bg-brand-700'
+const BTN_SECONDARY = 'border-[#cfdcec] bg-white text-navy-900 hover:border-brand-600 hover:bg-blue-50 hover:text-brand-700'
+const card = 'shrink-0 overflow-hidden rounded-xl border border-[#dce6f1] bg-white shadow-[0_4px_16px_rgba(40,83,130,0.04)]'
+const cardHeading = 'flex items-center gap-2 border-b border-[#dfe7f0] bg-[#fbfcfe] px-4 py-3 text-[13px] font-extrabold text-[#0b2b52] sm:px-5'
 
 function StateBadge({ state }) {
   const [text, style] = STATE_BADGES[state] || [state || '—', STATE_BADGES.replaced[1]]
   return <span className={`inline-flex whitespace-nowrap rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${style}`}>{text}</span>
+}
+
+// The one line under a history entry: its period and what happened to it (signed, declined and why, starting later...).
+function historyLine(item) {
+  const parts = [formatPeriod(item)]
+  if (item.derived_state === 'declined') {
+    const review = item.decline_step === 'review'
+    const when = item.declined_at ? ` on ${formatDate(item.declined_at)}` : ''
+    parts.push(`${review ? 'You asked for corrections' : 'You declined it after reading it'}${when}${item.decline_reason ? `: “${item.decline_reason}”` : ''}`)
+  } else if (item.signed_at) {
+    parts.push(`You signed it on ${formatDate(item.signed_at)}${item.signer_name ? ` (${item.signer_name})` : ''}`)
+    if (item.derived_state === 'scheduled') parts.push(`Starts ${formatDate(item.start_iso)}`)
+  }
+  return parts.join(' · ')
 }
 
 // Share of the term (start to end) that has passed, 0 to 100.
@@ -66,52 +82,63 @@ export default function AgreementsPage() {
   const hero = current || next
   const heroScheduled = !current && Boolean(next)
   const showNext = Boolean(current && next)
-  const history = list.filter((item) => item.agreement_id !== hero?.agreement_id)
+  // The next agreement and a renewal waiting for a signature have their own cards above, so they are not in the history too.
+  const history = list.filter((item) => item.agreement_id !== hero?.agreement_id && item.agreement_id !== next?.agreement_id && item.agreement_id !== renewal?.agreement_id)
   const remaining = hero && !heroScheduled ? daysLeft(hero) : null
   const expired = hero && !heroScheduled ? hero.derived_state === 'expired' || (remaining !== null && remaining < 0) : false
   const expiring = !expired && remaining !== null && remaining < EXPIRY_WARNING_DAYS
   const accent = heroScheduled ? 'bg-[#3d5a80]' : expired ? 'bg-red-500' : expiring ? 'bg-amber-500' : 'bg-emerald-500'
-  const activeCount = list.filter((item) => item.derived_state === 'active').length
-  const scheduledCount = scheduled.length
-  const awaitingCount = list.filter((item) => item.derived_state === 'awaiting').length
+  const declinedCount = list.filter((item) => item.derived_state === 'declined').length
   const progress = hero && !heroScheduled ? termProgress(hero) : 0
   const due = hero ? renewalDue(hero) : null
+  const startsIn = next?.start_iso ? Math.ceil((new Date(next.start_iso).getTime() - Date.now()) / 86400000) : 0
+  // One line that answers the vendor's question: where does my agreement stand, and is anything needed from me?
+  const standing = (() => {
+    if (heroScheduled) return { color: '#316fbb', title: `Your next agreement starts on ${formatDate(hero.start_iso)}`, detail: '' }
+    if (hero && expired) return { color: '#bf4252', title: `Your agreement ended on ${formatDate(hero.end_iso)}`, detail: 'Contact us to arrange a renewal' }
+    if (hero && expiring) return { color: '#936716', title: `Your agreement ends on ${formatDate(hero.end_iso)}`, detail: `${remaining} ${remaining === 1 ? 'day' : 'days'} left · contact us to arrange a renewal` }
+    if (hero) return { color: '#1f7c64', title: 'Your agreement is in force', detail: `until ${formatDate(hero.end_iso)}${remaining !== null ? ` · ${remaining} days left` : ''}` }
+    return { color: '#64748b', title: 'No signed agreement yet', detail: declinedCount > 0 ? 'Our team has been told and will review it' : '' }
+  })()
 
-  const actions = (item, compact) => (
-    <div className="flex justify-end gap-1.5">
-      <Button variant="secondary" className={SMALL_BUTTON} onClick={() => setViewing(item)}><Eye size={15} /> View</Button>
-      <Button variant="secondary" className={SMALL_BUTTON} onClick={() => download(item)} disabled={busyId === item.agreement_id}>
-        {busyId === item.agreement_id ? <Loader /> : <Download size={15} />} {compact ? '' : 'Download'}
-      </Button>
+  // Same two actions everywhere: read it on screen, or keep a PDF. In the history the download is an icon so the row stays light.
+  const downloading = (item) => busyId === item.agreement_id
+  const actions = (item) => (
+    <div className="flex shrink-0 items-center justify-end gap-2">
+      <button type="button" onClick={() => setViewing(item)} className={`${BTN} ${BTN_SECONDARY}`}><Eye size={15} /> View</button>
+      <button type="button" onClick={() => download(item)} disabled={downloading(item)} title="Download PDF" aria-label={`Download PDF of ${item.agreement_no}`} className={`${BTN} ${BTN_SECONDARY} w-9 px-0!`}>
+        {downloading(item) ? <Loader /> : <Download size={15} />}
+      </button>
     </div>
   )
 
+  // The agreement's dates in order, as a timeline: [icon, label, date]. A date that has passed is drawn as done.
   const keyDates = hero ? [
-    [Send, 'Issued', formatDate(hero.issued_at)],
-    [PenLine, 'Signed', formatDate(hero.signed_at)],
-    [CalendarRange, 'Valid from', formatDate(hero.start_iso)],
-    [CalendarCheck, 'Valid until', formatDate(hero.end_iso)],
-    ...(showNext ? [[CalendarPlus, 'Next agreement starts', formatDate(next.start_iso)]] : []),
-    ...(!heroScheduled ? [showNext ? [CalendarClock, 'Renewal signed', formatDate(next.signed_at)] : [CalendarClock, 'Renewal due', due ? formatDate(due) : '—']] : []),
+    [Send, 'Sent to you', hero.issued_at],
+    [PenLine, 'You signed', hero.signed_at],
+    [CalendarRange, 'Valid from', hero.start_iso],
+    [CalendarCheck, 'Valid until', hero.end_iso],
+    // With a signed renewal the fifth card is when it starts (its own card is below); otherwise when the renewal window opens.
+    ...(!heroScheduled ? [showNext ? [CalendarPlus, 'Next agreement starts', next.start_iso] : [CalendarClock, 'Renewal window opens', due]] : []),
   ] : []
+  const passed = (value) => { const time = value ? new Date(value).getTime() : NaN; return !Number.isNaN(time) && time <= Date.now() }
+
 
   return (
     <AppShell breadcrumb="Agreement">
       <PageContainer wide className="vendor-workspace h-full">
-        <div className="mx-auto flex h-full max-w-[1180px] min-h-0 flex-col gap-4 overflow-y-auto px-1 pb-4 sm:px-2">
-          <div className="flex shrink-0 flex-wrap items-start justify-between gap-3 px-1">
-            <div>
-              {!isActive && (
-                <Link to="/application-status" className="mb-2 inline-flex items-center gap-1.5 text-xs font-bold text-slate-600 transition hover:text-navy-900"><ArrowLeft size={15} /> Back to application status</Link>
-              )}
-              <h1 className="text-lg font-extrabold text-[#0b2b52]">Agreement</h1>
-              <p className="mt-1 text-xs text-[#59728f]">Your signed vendor agreement, its dates and every earlier version.</p>
-            </div>
+        <div className="mx-auto flex h-full max-w-[1820px] min-h-0 flex-col gap-4 overflow-y-auto px-1 pb-4 sm:px-2">
+          <div className="shrink-0 px-1">
+            {!isActive && (
+              <Link to="/application-status" className="mb-2 inline-flex items-center gap-1.5 text-xs font-bold text-slate-600 transition hover:text-navy-900"><ArrowLeft size={15} /> Back to application status</Link>
+            )}
+            <h1 className="text-lg font-extrabold text-[#0b2b52]">Your agreement</h1>
+            <p className="mt-1 text-xs text-[#59728f]">Your vendor agreement with us: how long it runs, a copy to keep, and what happened with any earlier versions.</p>
             {agreements !== null && list.length > 0 && (
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-[#dce6f1] bg-white px-3 py-1 text-xs font-bold text-[#29466a]" aria-label="Agreement summary">
-                <i className={`size-2 rounded-full ${activeCount ? 'bg-emerald-500' : 'bg-slate-300'}`} />
-                {activeCount} active{scheduledCount > 0 ? ` · ${scheduledCount} scheduled` : ''} · {awaitingCount} awaiting
-              </span>
+              <p className="mt-3 inline-flex items-center gap-2 text-xs text-[#52708f]" aria-label="Where your agreement stands">
+                <i className="size-1.5 shrink-0 rounded-full" style={{ backgroundColor: standing.color }} />
+                <span><b className="font-bold text-[#0b2b52]">{standing.title}</b>{standing.detail ? ` · ${standing.detail}` : ''}</span>
+              </p>
             )}
           </div>
 
@@ -123,16 +150,26 @@ export default function AgreementsPage() {
           )}
 
           {renewal && (
-            <section className="shrink-0 overflow-hidden rounded-lg border border-blue-300 bg-gradient-to-r from-[#eef7ff] to-white shadow-[0_6px_18px_rgba(40,83,130,0.08)]" aria-label="Renewed agreement ready for your signature">
-              <div className="flex flex-col gap-3 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-start gap-3">
-                  <span className="grid size-10 shrink-0 place-items-center rounded-full bg-brand-600 text-white"><FilePenLine size={18} /></span>
-                  <div>
-                    <h2 className="text-sm font-extrabold text-navy-900">Renewed agreement ready for your signature</h2>
-                    <p className="mt-0.5 text-xs leading-5 text-slate-600">{renewal.agreement_no} · Version {renewal.version} · {formatPeriod(renewal)}</p>
+            <section className="shrink-0 overflow-hidden rounded-xl border border-brand-600/40 bg-white shadow-[0_8px_24px_rgba(23,105,232,0.12)]" aria-label="Renewed agreement ready for your signature">
+              <div className="flex">
+                <span className="w-1.5 shrink-0 bg-brand-600" aria-hidden="true" />
+                <div className="flex min-w-0 flex-1 flex-col gap-4 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="flex min-w-0 items-start gap-3.5">
+                    <span className="grid size-11 shrink-0 place-items-center rounded-full bg-brand-50 text-brand-700 ring-1 ring-blue-200"><FilePenLine size={20} /></span>
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-brand-700">Action needed</p>
+                      <h2 className="mt-0.5 text-base font-extrabold text-navy-950">Your renewed agreement is ready to sign</h2>
+                      <p className="mt-1 text-xs leading-5 text-slate-600">
+                        {renewal.agreement_no} · Version {renewal.version}. It runs <b className="font-bold text-navy-900">{formatPeriod(renewal)}</b>
+                        {current ? ', and your current agreement stays in force until then.' : '.'} Your details are unchanged, so it only needs to be read and signed.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 flex-wrap items-center gap-2">
+                    <button type="button" onClick={() => setViewing(renewal)} className={`${BTN} ${BTN_SECONDARY}`}><Eye size={15} /> Read it first</button>
+                    <button type="button" onClick={() => navigate(`/agreements/${renewal.agreement_id}/sign`, { state: { agreement: renewal } })} className={`${BTN} ${BTN_PRIMARY}`}><PenLine size={15} /> Review and sign</button>
                   </div>
                 </div>
-                <Button className={`${SMALL_BUTTON} shrink-0`} onClick={() => navigate(`/agreements/${renewal.agreement_id}/sign`)}>Review and sign</Button>
               </div>
             </section>
           )}
@@ -148,14 +185,14 @@ export default function AgreementsPage() {
           ) : (
             <>
               {hero && (
-                <div className="grid gap-4 lg:grid-cols-3">
-                  <div className="space-y-4 lg:col-span-2">
-                  <section className={card} aria-label="Current agreement">
+                <div>
+                  <div className="flex flex-col gap-4">
+                  <section className={`${card} flex flex-1 flex-col`} aria-label="Current agreement">
                     <div className={`h-1.5 ${accent}`} aria-hidden="true" />
-                    <div className="px-5 py-4">
+                    <div className="flex-1 px-5 py-4">
                       <div className="flex flex-wrap items-start justify-between gap-2">
                         <div>
-                          <p className="text-[11px] font-bold uppercase tracking-[0.04em] text-[#29466a]">{heroScheduled ? 'Next agreement' : 'Current agreement'}</p>
+                          <p className="text-[11px] font-bold uppercase tracking-[0.04em] text-[#29466a]">{heroScheduled ? 'Your next agreement' : 'Your current agreement'}</p>
                           <h2 className="mt-1 text-2xl font-extrabold tracking-[-0.02em] text-navy-950">{hero.agreement_no}</h2>
                           <p className="text-xs font-semibold text-slate-500">Version {hero.version}</p>
                         </div>
@@ -178,123 +215,132 @@ export default function AgreementsPage() {
                         </div>
                       </div>
 
-                      <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                        {keyTermTiles(hero).map(([name, value]) => (
-                          <div key={name} className="rounded-lg border border-[#dce6f1] bg-[#f7fafd] px-3 py-2">
-                            <p className="text-[10px] font-bold uppercase tracking-[0.06em] text-slate-500">{name}</p>
-                            <p className="text-sm font-bold text-navy-900">{value}</p>
-                          </div>
-                        ))}
-                      </div>
+                      <ol className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5" aria-label="Key dates">
+                        {keyDates.map(([Icon, label, value]) => {
+                          const done = passed(value)
+                          const current = !done && keyDates.find(([, , date]) => !passed(date))?.[1] === label
+                          const away = value ? Math.ceil((new Date(value).getTime() - Date.now()) / 86400000) : null
+                          return (
+                            <li key={label} className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 ${current ? 'border-brand-600 bg-[#eef6ff] shadow-[0_0_0_1px_var(--primary)]' : 'border-[#dce6f1] bg-[#f7fafd]'}`}>
+                              <span className={`grid size-8 shrink-0 place-items-center rounded-full ${done ? 'bg-brand-600 text-white' : current ? 'bg-white text-brand-700 ring-1 ring-brand-600' : 'bg-white text-slate-400 ring-1 ring-slate-200'}`}><Icon size={15} /></span>
+                              <div className="min-w-0">
+                                <p className={`truncate text-[10px] font-bold uppercase tracking-[0.06em] ${current ? 'text-brand-700' : 'text-slate-500'}`}>{label}</p>
+                                <p className={`text-[13px] font-bold ${done || current ? 'text-navy-900' : 'text-slate-500'}`}>{value ? formatDate(value) : '—'}</p>
+                                {current && away !== null && away > 0 && <p className="text-[11px] text-brand-700">in {away} {away === 1 ? 'day' : 'days'}</p>}
+                              </div>
+                            </li>
+                          )
+                        })}
+                      </ol>
 
-                      <p className="mt-4 text-xs text-slate-600">Signed by <b className="font-bold text-navy-900">{hero.signer_name || '—'}</b> on <b className="font-bold text-navy-900">{formatDate(hero.signed_at)}</b></p>
+                      <p className="mt-3 text-xs text-slate-600">Signed for you by <b className="font-bold text-navy-900">{hero.signer_name || '—'}</b>{hero.signed_at ? ` on ${formatDate(hero.signed_at)}` : ''}.</p>
+
                       {(expiring || expired) && !showNext && (
                         <p className={`mt-3 rounded-lg border px-3 py-2 text-xs leading-5 ${expired ? 'border-red-200 bg-red-50 text-red-800' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>
-                          {expired ? 'This agreement has ended. Our team will send a renewed agreement for your signature.' : 'This agreement ends soon. Our team will send a renewed agreement for your signature.'}
+                          {expired ? 'This agreement has ended. To arrange a renewal, write to support@fourthsignal.com and mention your agreement number.' : 'This agreement ends soon. To arrange a renewal, write to support@fourthsignal.com and mention your agreement number.'}
                         </p>
                       )}
                     </div>
                     <div className="flex justify-end gap-1.5 border-t border-slate-100 bg-slate-50/60 px-5 py-2.5">
-                      <Button className={SMALL_BUTTON} onClick={() => setViewing(hero)}><Eye size={15} /> View</Button>
-                      <Button variant="secondary" className={SMALL_BUTTON} onClick={() => download(hero)} disabled={busyId === hero.agreement_id}>
-                        {busyId === hero.agreement_id ? <Loader /> : <Download size={15} />} Download
-                      </Button>
+                      <button type="button" onClick={() => setViewing(hero)} className={`${BTN} ${BTN_PRIMARY}`}><Eye size={15} /> View agreement</button>
+                      <button type="button" onClick={() => download(hero)} disabled={downloading(hero)} className={`${BTN} ${BTN_SECONDARY}`}>
+                        {downloading(hero) ? <Loader /> : <Download size={15} />} Download PDF
+                      </button>
                     </div>
                   </section>
 
                   {showNext && (
-                    <section className={`${card} border-[#c5d3e4]`} aria-label="Next agreement">
-                      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-                        <div className="flex items-start gap-3">
-                          <span className="grid size-9 shrink-0 place-items-center rounded-full bg-[#e8eef6] text-[#3d5a80]"><CalendarPlus size={17} /></span>
+                    <section className={card} aria-label="Upcoming renewal">
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-blue-100 bg-[#eef7ff] px-5 py-2.5">
+                        <h2 className="flex items-center gap-2 text-[13px] font-extrabold text-[#0b2b52]"><CalendarPlus size={15} className="text-brand-600" aria-hidden="true" /> Upcoming renewal</h2>
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-white px-2.5 py-0.5 text-[11px] font-bold text-[#1265c8]">
+                          {startsIn > 0 ? `Starts in ${startsIn} ${startsIn === 1 ? 'day' : 'days'}` : `Starts ${formatDate(next.start_iso)}`}
+                        </span>
+                      </div>
+                      <div className="px-5 py-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
                           <div>
-                            <p className="text-[13px] font-extrabold text-navy-900">Next agreement: {next.agreement_no}</p>
-                            <p className="text-xs leading-5 text-slate-600">Starts {formatDate(next.start_iso)} · signed on {formatDate(next.signed_at)}</p>
+                            <h3 className="text-xl font-extrabold tracking-[-0.02em] text-navy-950">{next.agreement_no}</h3>
+                            <p className="text-xs font-semibold text-slate-500">Version {next.version}{next.key_terms?.term_months != null ? ` · ${next.key_terms.term_months} ${Number(next.key_terms.term_months) === 1 ? 'month' : 'months'}` : ''}</p>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-2">
+                            <button type="button" onClick={() => setViewing(next)} className={`${BTN} ${BTN_SECONDARY}`}><Eye size={15} /> View agreement</button>
+                            <button type="button" onClick={() => download(next)} disabled={downloading(next)} title="Download PDF" aria-label={`Download PDF of ${next.agreement_no}`} className={`${BTN} ${BTN_SECONDARY} w-9 px-0!`}>
+                              {downloading(next) ? <Loader /> : <Download size={15} />}
+                            </button>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <StateBadge state="scheduled" />
-                          {actions(next)}
-                        </div>
+
+                        <ol className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-stretch" aria-label="How the renewal follows your current agreement">
+                          <li className="flex-1 rounded-lg border border-[#dce6f1] bg-[#f7fafd] px-3.5 py-2.5">
+                            <p className="text-[10px] font-bold uppercase tracking-[0.06em] text-slate-500">Your current agreement ends</p>
+                            <p className="text-[13px] font-bold text-navy-900">{formatDate(hero.end_iso)}</p>
+                          </li>
+                          <li className="hidden items-center text-slate-300 sm:flex" aria-hidden="true"><ArrowRight size={18} /></li>
+                          <li className="flex-1 rounded-lg border border-brand-600 bg-[#eef6ff] px-3.5 py-2.5 shadow-[0_0_0_1px_var(--primary)]">
+                            <p className="text-[10px] font-bold uppercase tracking-[0.06em] text-brand-700">Renewal runs</p>
+                            <p className="text-[13px] font-bold text-navy-900">{formatPeriod(next)}</p>
+                          </li>
+                        </ol>
+
+                        <dl className="mt-4 grid gap-x-6 gap-y-2.5 sm:grid-cols-3">
+                          {[
+                            ['Sent to you', formatDate(next.issued_at)],
+                            ['Signed for you by', next.signer_name || '—'],
+                            ['You signed on', formatDate(next.signed_at)],
+                          ].map(([term, value]) => (
+                            <div key={term} className="min-w-0">
+                              <dt className="text-[11px] font-semibold text-slate-500">{term}</dt>
+                              <dd className="text-[13px] font-bold text-navy-900">{value}</dd>
+                            </div>
+                          ))}
+                        </dl>
+                        <p className="mt-3 flex items-center gap-1.5 text-xs text-emerald-700"><CheckCircle2 size={14} aria-hidden="true" /> Already signed. Nothing to do: it takes over automatically when your current agreement ends.</p>
                       </div>
                     </section>
                   )}
-                  </div>
-                  <div className="space-y-4">
-                    <section className={card} aria-label="Key dates">
-                      <h2 className={cardHeading}>Key dates</h2>
-                      <dl className="divide-y divide-slate-100">
-                        {keyDates.map(([Icon, label, value]) => (
-                          <div key={label} className="flex items-center justify-between gap-3 px-4 py-2.5">
-                            <dt className="flex items-center gap-2 text-xs font-semibold text-slate-600"><Icon size={15} className="text-brand-600" /> {label}</dt>
-                            <dd className="text-[13px] font-bold text-navy-900">{value}</dd>
-                          </div>
-                        ))}
-                      </dl>
-                    </section>
-                    <section className={card} aria-label="Need help?">
-                      <h2 className={cardHeading}>Need help?</h2>
-                      <div className="flex items-start gap-3 px-4 py-3">
-                        <span className="grid size-8 shrink-0 place-items-center rounded-full bg-brand-50 text-brand-600"><LifeBuoy size={16} /></span>
-                        <div>
-                          <p className="text-xs leading-5 text-slate-600">Questions about your agreement or its dates? Write to us and mention your agreement number.</p>
-                          <a href={`mailto:${SUPPORT_EMAIL}`} className="mt-1 inline-flex items-center gap-1.5 text-xs font-bold text-[#1265c8] hover:underline"><Mail size={13} /> {SUPPORT_EMAIL}</a>
-                        </div>
-                      </div>
-                    </section>
                   </div>
                 </div>
               )}
 
               <section className={card} aria-label="Agreement history">
-                <h2 className={cardHeading}>Agreement history</h2>
+                <h2 className={cardHeading}>Agreement history <span className="grid min-w-5 place-items-center rounded-full bg-[#eef5fd] px-1.5 py-0.5 text-[11px] font-bold text-[#1769e8]">{history.length}</span></h2>
                 {history.length === 0 ? (
                   <p className="px-4 py-6 text-center text-xs font-medium text-slate-500">No earlier versions.</p>
                 ) : (
-                  <>
-                    <div className="hidden overflow-x-auto md:block">
-                      <table className="w-full min-w-[820px] text-left text-xs">
-                        <thead>
-                          <tr className="border-b border-[#dce6f1] text-[10px] font-bold uppercase tracking-[0.06em] text-slate-500">
-                            {['Agreement no.', 'Version', 'Period', 'Signed on', 'Signed by', 'State', ''].map((heading) => <th key={heading || 'actions'} className="px-4 py-2">{heading}</th>)}
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {history.map((item) => (
-                            <tr key={item.agreement_id} className="text-slate-700 transition hover:bg-[#f4f8fc]">
-                              <td className="px-4 py-2.5 font-bold text-navy-900">{item.agreement_no}</td>
-                              <td className="px-4 py-2.5">{item.version}</td>
-                              <td className="px-4 py-2.5">{formatPeriod(item)}</td>
-                              <td className="px-4 py-2.5">{item.signed_at ? formatDate(item.signed_at) : '—'}</td>
-                              <td className="px-4 py-2.5">{item.signer_name || '—'}</td>
-                              <td className="px-4 py-2.5"><StateBadge state={item.derived_state} />{item.derived_state === 'scheduled' && <span className="mt-0.5 block text-[11px] text-slate-500">Starts {formatDate(item.start_iso)}</span>}</td>
-                              <td className="px-4 py-2.5">{actions(item)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    <ul className="divide-y divide-slate-100 md:hidden">
-                      {history.map((item) => (
-                        <li key={item.agreement_id} className="space-y-2 px-4 py-3">
-                          <div className="flex items-center justify-between gap-2">
-                            <p className="text-[13px] font-bold text-navy-900">{item.agreement_no} <span className="font-semibold text-slate-500">· v{item.version}</span></p>
-                            <StateBadge state={item.derived_state} />
+                  <ol className="max-h-[440px] overflow-y-auto p-4 [scrollbar-width:thin] sm:p-5">
+                    {history.map((item, index) => {
+                      const dot = { declined: 'bg-red-500', active: 'bg-emerald-500', scheduled: 'bg-[#316fbb]', awaiting: 'bg-amber-500' }[item.derived_state] || 'bg-slate-300'
+                      return (
+                        <li key={item.agreement_id} className="relative pl-7">
+                          {index < history.length - 1 && <span className="absolute left-[5px] top-4 -bottom-3 w-px bg-slate-200" aria-hidden="true" />}
+                          <span className={`absolute left-0 top-[18px] size-[11px] rounded-full ring-4 ring-white ${dot}`} aria-hidden="true" />
+                          <div className="mb-3 flex flex-col gap-3 rounded-lg border border-[#dce6f1] bg-white px-4 py-3 transition hover:border-[#c5d3e4] hover:bg-[#f9fbfe] sm:flex-row sm:items-center sm:justify-between">
+                            <div className="min-w-0">
+                              <p className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                                <span className="text-[13px] font-extrabold text-navy-900">{item.agreement_no}</span>
+                                <span className="text-xs font-semibold text-slate-500">Version {item.version}</span>
+                                <StateBadge state={item.derived_state === 'declined' && item.decline_step === 'review' ? 'corrections' : item.derived_state} />
+                              </p>
+                              <p className="mt-1 text-xs leading-5 text-slate-600">{historyLine(item)}</p>
+                            </div>
+                            {actions(item)}
                           </div>
-                          <p className="text-xs text-slate-600">{formatPeriod(item)}</p>
-                          <p className="text-xs text-slate-500">{item.signed_at ? `Signed ${formatDate(item.signed_at)} by ${item.signer_name || '—'}` : 'Not signed yet'}</p>
-                          {actions(item)}
                         </li>
-                      ))}
-                    </ul>
-                  </>
+                      )
+                    })}
+                  </ol>
                 )}
               </section>
             </>
           )}
         </div>
       </PageContainer>
-      <AgreementViewDialog agreement={viewing} onClose={() => setViewing(null)} />
+      <AgreementViewDialog
+        agreement={viewing}
+        onClose={() => setViewing(null)}
+        onSign={viewing && viewing.can_sign && viewing.status === 'sent' ? () => navigate(`/agreements/${viewing.agreement_id}/sign`, { state: { agreement: viewing } }) : null}
+      />
     </AppShell>
   )
 }

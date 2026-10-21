@@ -311,9 +311,9 @@ export default function ApplicationStatusPage() {
                 <Button variant="secondary" className="min-h-9! w-full py-1.5! text-[13px]!" onClick={openProfile}>
                   <Eye size={15} /> View submitted details
                 </Button>
-                {signed && (
+                {(signed || profile?.declined_agreement) && (
                   <Button variant="secondary" className="min-h-9! w-full py-1.5! text-[13px]!" onClick={() => navigate('/agreements')}>
-                    <FileSignature size={15} /> View agreement
+                    <FileSignature size={15} /> {signed ? 'View agreement' : 'Agreement history'}
                   </Button>
                 )}
                 {!rejected && !changeRequested && !signed && (

@@ -490,13 +490,27 @@ export async function downloadAgreement(id, agreementNo) {
   setTimeout(() => URL.revokeObjectURL(url), 10000)
 }
 
-export const sendAgreementCode = (id) => agreementCall(`/vendors/me/agreements/${id}/send-code`, { method: 'POST' }, 'Unable to send the code. Please try again.')
+// The agreement as it will look once signed, built from what is filled in so far (nothing is saved). `final` adds the
+// certificate page. Returns the PDF as a Blob.
+export async function previewSignedAgreement(id, payload) {
+  let response
+  try {
+    response = await authFetch(`/vendors/me/agreements/${id}/preview`, jsonRequest('POST', payload))
+  } catch {
+    throw new Error('Unable to load the preview. Please try again.')
+  }
+  if (!response.ok) throw await agreementError(response, 'Unable to load the preview. Please try again.')
+  return response.blob()
+}
+
+export const sendAgreementCode =(id) => agreementCall(`/vendors/me/agreements/${id}/send-code`, { method: 'POST' }, 'Unable to send the code. Please try again.')
 
 export const verifyAgreementCode = (id, otp) => agreementCall(`/vendors/me/agreements/${id}/verify-code`, jsonRequest('POST', { otp }), 'Unable to verify the code. Please try again.')
 
 export const signAgreement = (id, payload) => agreementCall(`/vendors/me/agreements/${id}/sign`, jsonRequest('POST', payload), 'Unable to sign the agreement. Please try again.')
 
-export const declineAgreement = (id, reason, atStep = 'sign') => agreementCall(`/vendors/me/agreements/${id}/decline`, jsonRequest('POST', { reason, at_step: atStep }), 'Unable to send your response. Please try again.')
+// `fields` (the details to change) goes with atStep 'review': that is a change request for the checker, not a plain decline.
+export const declineAgreement = (id, reason, atStep = 'sign', fields = undefined) => agreementCall(`/vendors/me/agreements/${id}/decline`, jsonRequest('POST', { reason, at_step: atStep, ...(fields ? { fields } : {}) }), 'Unable to send your response. Please try again.')
 
 export const changePassword = (currentPassword, newPassword) => agreementCall('/vendors/me/password', jsonRequest('POST', { current_password: currentPassword, new_password: newPassword }), 'Unable to change your password. Please try again.')
 

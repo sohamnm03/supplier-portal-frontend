@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react'
-import { MailCheck } from 'lucide-react'
+import { MailCheck, RefreshCw } from 'lucide-react'
 import Button from '../common/Button'
 import Loader from '../common/Loader'
 
 const CODE_PATTERN = /^\d{6}$/
+
+// 37s, then minutes once it is long (a rate limit can be close to an hour).
+const waitText = (seconds) => (seconds > 90 ? `${Math.ceil(seconds / 60)} min` : `${seconds}s`)
 
 // Shown under the email field while a code is pending (or a verification just failed). The code can be typed here,
 // or the link in the email opened on any device: the status is polled, so this panel disappears either way.
@@ -45,15 +48,15 @@ export default function EmailVerificationPanel({ email, verification }) {
               It may take a minute and can land in spam.
             </span>
           </p>
-          <div className="mt-2.5 flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="mt-2.5 flex items-center gap-2">
             <input
-              className="app-field w-full text-center font-mono text-base tracking-[0.4em] sm:max-w-44"
+              className="app-field min-w-0 flex-1 text-center font-mono text-base tracking-[0.4em]"
               inputMode="numeric"
               autoComplete="one-time-code"
               maxLength={6}
               placeholder="000000"
               aria-label="6-digit verification code"
-              aria-invalid={Boolean(error)}
+              aria-invalid={attemptsRemaining != null}
               value={code}
               onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
               onKeyDown={(event) => {
@@ -62,12 +65,21 @@ export default function EmailVerificationPanel({ email, verification }) {
                 confirm()
               }}
             />
-            <Button type="button" onClick={confirm} disabled={busy || !CODE_PATTERN.test(code)}>
+            <Button type="button" className="shrink-0 justify-center whitespace-nowrap px-5" onClick={confirm} disabled={busy || !CODE_PATTERN.test(code)}>
               {busy ? <><Loader /> Checking...</> : 'Confirm code'}
             </Button>
-            <Button type="button" variant="ghost" onClick={resend} disabled={busy || waitSeconds > 0}>
-              {waitSeconds > 0 ? `Resend in ${waitSeconds}s` : 'Resend code'}
-            </Button>
+          </div>
+          <div className="mt-3 flex items-center justify-between gap-2 border-t border-blue-100 pt-2.5">
+            <span className="text-xs text-slate-500">Didn&rsquo;t get the code?</span>
+            <button
+              type="button"
+              className="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-white px-3 py-1 text-xs font-semibold text-brand-700 transition hover:border-brand-600 hover:bg-blue-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-600/40 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400"
+              onClick={resend}
+              disabled={busy || waitSeconds > 0}
+            >
+              <RefreshCw size={12} aria-hidden="true" />
+              {waitSeconds > 0 ? `Resend in ${waitText(waitSeconds)}` : 'Resend code'}
+            </button>
           </div>
         </>
       )}
@@ -76,6 +88,12 @@ export default function EmailVerificationPanel({ email, verification }) {
           {error}
           {pending && attemptsRemaining != null && ` ${attemptsRemaining} ${attemptsRemaining === 1 ? 'attempt' : 'attempts'} left.`}
         </p>
+      )}
+      {/* No code is pending (it expired, was locked or replaced): one click sends a fresh one and brings the code box back. */}
+      {!pending && error && (
+        <Button type="button" variant="secondary" className="mt-2.5 w-full justify-center" onClick={resend} disabled={busy || waitSeconds > 0}>
+          {busy ? <><Loader /> Sending...</> : <><RefreshCw size={14} aria-hidden="true" /> {waitSeconds > 0 ? `Send a new code in ${waitText(waitSeconds)}` : 'Send a new code'}</>}
+        </Button>
       )}
     </div>
   )

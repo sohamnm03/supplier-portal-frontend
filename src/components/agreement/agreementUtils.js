@@ -22,6 +22,8 @@ export const STATE_BADGES = {
   scheduled: ['Scheduled', 'border-slate-300 bg-[#e8eef6] text-[#3d5a80]'],
   expired: ['Expired', 'border-amber-200 bg-amber-50 text-amber-800'],
   replaced: ['Replaced', 'border-slate-200 bg-slate-100 text-slate-600'],
+  declined: ['Declined', 'border-red-200 bg-red-50 text-red-700'],
+  corrections: ['Corrections requested', 'border-amber-200 bg-amber-50 text-amber-800'],
 }
 
 // Compact button sizing used across the agreement screens (Button's own size is larger; the global button font

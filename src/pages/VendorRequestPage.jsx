@@ -75,7 +75,7 @@ export default function VendorRequestPage() {
   const [confirmed, setConfirmed] = useState(() => new Set())
 
   const values = watch()
-  const identity = useIdentityVerification(values, returned ? initialValues : null)
+  const identity = useIdentityVerification(values, returned ? initialValues : null, !returned)
   const contactReady = isValidPhone(values.vendorPhoneCode, values.vendorPhone)
 
   // CIN is only for incorporated entities: one left over from a vendor type the vendor has since changed is dropped, unless the

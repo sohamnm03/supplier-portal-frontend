@@ -33,36 +33,43 @@ function Note({ who, initial, tone, text }) {
       <div className="min-w-0 flex-1 text-[13px] leading-5 text-slate-700">
         <span className="font-bold text-navy-900">{who}: </span>
         <span className={open ? 'whitespace-pre-line' : 'line-clamp-2'}>{text}</span>
-        {long && <button type="button" onClick={() => setOpen((value) => !value)} className="text-xs font-bold text-[#1265c8] hover:underline">{open ? 'Show less' : 'Show full'}</button>}
+        {long && <button type="button" onClick={() => setOpen((value) => !value)} className="ml-1 text-xs! font-bold! text-[#1265c8] hover:underline">{open ? 'Show less' : 'Show full'}</button>}
       </div>
     </li>
   )
 }
 
 // The first screen after an agreement was issued again (version 2 or later): short and action-first. Details of what
-// changed are shown on the review step itself.
-export default function AgreementUpdated({ agreement, onStart }) {
+// changed are shown on the review step itself. `renewal` is the next term of an agreement already in force (the vendor is active):
+// it is a new agreement for a new period, not a corrected one, so it says so and leaves out "what was updated".
+export default function AgreementUpdated({ agreement, onStart, renewal = false }) {
   const [historyOpen, setHistoryOpen] = useState(false)
   const info = agreement?.update_info || {}
   const version = agreement?.version
   const previous = info.previous_version || (version ? version - 1 : '')
   const earlier = info.history?.length ? info.history : (previous ? [{ version: previous, status: 'declined', reason: info.previous_decline_reason }] : [])
-  const changes = info.changes || []
+  const changes = renewal ? [] : info.changes || []
   const months = agreement?.key_terms?.term_months
   const issued = agreement?.issued_at ? formatDate(agreement.issued_at) : ''
   const facts = [
     agreement?.agreement_no && ['Agreement no.', agreement.agreement_no],
     ['Version', String(version)],
-    months != null && ['Validity', `${months} ${Number(months) === 1 ? 'month' : 'months'}`],
-    issued && issued !== '—' && ['Re-issued on', issued],
+    months != null && [renewal ? 'Term' : 'Validity', `${months} ${Number(months) === 1 ? 'month' : 'months'}`],
+    renewal && agreement?.start_iso && ['Starts on', formatDate(agreement.start_iso)],
+    !renewal && issued && issued !== '—' && ['Re-issued on', issued],
+    renewal && issued && issued !== '—' && ['Sent to you on', issued],
   ].filter(Boolean)
 
   return (
     <div className="flex min-h-full w-full items-center justify-center py-2">
       <section className="w-full max-w-[860px] rounded-2xl border border-blue-200/80 bg-white px-6 py-8 shadow-[0_12px_36px_rgba(40,83,130,0.08)] sm:px-10" aria-label="Updated agreement">
         <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-[11px] font-bold text-amber-800">Action needed</span>
-        <h2 className="mt-3 text-3xl font-extrabold tracking-[-0.03em] text-navy-950">Your agreement has been updated</h2>
-        <p className="mt-1 text-sm text-slate-600">Version {version} is ready for your review and signature.</p>
+        <h2 className="mt-3 text-3xl font-extrabold tracking-[-0.03em] text-navy-950">{renewal ? 'Your renewed agreement is ready' : 'Your agreement has been updated'}</h2>
+        <p className="mt-1 text-sm text-slate-600">
+          {renewal
+            ? `This is your agreement for the next term${agreement?.start_iso && agreement?.end_iso ? `, ${formatDate(agreement.start_iso)} to ${formatDate(agreement.end_iso)}` : ''}. Your current agreement stays in force until it starts.`
+            : `Version ${version} is ready for your review and signature.`}
+        </p>
 
         <dl className="mt-5 grid grid-cols-2 overflow-hidden rounded-xl border border-[#dce6f1] bg-[#f7fafd] sm:flex">
           {facts.map(([label, value], index) => (
@@ -82,7 +89,7 @@ export default function AgreementUpdated({ agreement, onStart }) {
 
         {(info.previous_decline_reason || info.issue_note) && (
           <ul className="mt-4 space-y-2 rounded-lg border border-[#dce6f1] bg-[#f7fafd] px-3.5 py-3" aria-label="Notes">
-            {info.previous_decline_reason && <Note who="You" initial="Y" tone="bg-slate-200 text-slate-700" text={info.previous_decline_reason} />}
+            {info.previous_decline_reason && <Note who={renewal ? 'You, on the earlier version' : 'You'} initial="Y" tone="bg-slate-200 text-slate-700" text={info.previous_decline_reason} />}
             {info.issue_note && <Note who="Our team" initial="T" tone="bg-brand-600 text-white" text={info.issue_note} />}
           </ul>
         )}
@@ -118,8 +125,8 @@ export default function AgreementUpdated({ agreement, onStart }) {
         </div>
 
         <div className="mt-3 border-t border-slate-100 pt-2.5">
-          <button type="button" onClick={() => setHistoryOpen((value) => !value)} aria-expanded={historyOpen} className="inline-flex items-center gap-1 text-xs font-bold text-slate-500 transition hover:text-navy-900">
-            Version history <ChevronDown size={14} className={`transition ${historyOpen ? 'rotate-180' : ''}`} />
+          <button type="button" onClick={() => setHistoryOpen((value) => !value)} aria-expanded={historyOpen} className="inline-flex items-center gap-1 text-xs! font-bold! text-slate-500 transition hover:text-navy-900">
+            {renewal ? 'Earlier agreements' : 'Version history'} <ChevronDown size={14} className={`transition ${historyOpen ? 'rotate-180' : ''}`} />
           </button>
           {historyOpen && (
             <ol className="mt-3" aria-label="Versions">

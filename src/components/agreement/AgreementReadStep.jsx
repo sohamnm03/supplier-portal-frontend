@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ArrowRight, CheckSquare, Download, ExternalLink, FileText, KeyRound, PenLine } from 'lucide-react'
+import { ArrowRight, CheckSquare, Download, ExternalLink, FileText, KeyRound, MessageSquareWarning, PenLine } from 'lucide-react'
 import Button from '../common/Button'
 import Loader from '../common/Loader'
 import useAgreementPdf from './useAgreementPdf'
@@ -18,7 +18,7 @@ const NEXT = [
 
 // "Read the agreement": the document fills the screen; a slim side panel (a stacked bar on phones) holds the key terms,
 // the open / download actions and the "I have read" checkbox with Back and Continue.
-export default function AgreementReadStep({ agreement, readOk, onReadChange, onBack, onContinue }) {
+export default function AgreementReadStep({ agreement, readOk, onReadChange, onBack, onContinue, onDecline = null }) {
   const { url, error, pages, retry } = useAgreementPdf(agreement.agreement_id)
   const [downloading, setDownloading] = useState(false)
   const [downloadError, setDownloadError] = useState('')
@@ -138,6 +138,14 @@ export default function AgreementReadStep({ agreement, readOk, onReadChange, onB
               Continue <ArrowRight size={15} aria-hidden="true" />
             </Button>
           </div>
+          {onDecline && (
+            <p className="mt-3 flex flex-wrap items-center justify-center gap-x-1.5 border-t border-[#dce6f1] pt-2.5 text-center text-[11.5px] leading-5 text-slate-500">
+              Not able to agree to these terms?
+              <button type="button" onClick={onDecline} className="inline-flex items-center gap-1 rounded-md px-1 text-[11.5px]! font-bold! text-red-700 underline-offset-2 transition hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500/30">
+                <MessageSquareWarning size={13} aria-hidden="true" /> Decline agreement
+              </button>
+            </p>
+          )}
         </div>
       </div>
     </div>

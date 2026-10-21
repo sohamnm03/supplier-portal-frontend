@@ -21,9 +21,11 @@ export default function useEmailVerification(email) {
   const [state, setState] = useState(IDLE)
   const [busy, setBusy] = useState(false)
   const requestToken = useRef(0)
+  const activeId = useRef('') // the verification the panel is on; a late answer about an older one is ignored
 
   const reset = useCallback(() => {
     requestToken.current += 1
+    activeId.current = ''
     setBusy(false)
     setState(IDLE)
   }, [])
@@ -43,7 +45,8 @@ export default function useEmailVerification(email) {
       setState((s) => ({ ...s, phase: 'verified', email: forEmail, verificationId, error: '', attemptsRemaining: null }))
       return true
     }
-    if (DEAD_STATUS_MESSAGES[result.status]) {
+    // Sending a new code supersedes the old one, so a poll of the old verification can answer "superseded" after the new one is already shown.
+    if (DEAD_STATUS_MESSAGES[result.status] && activeId.current === verificationId) {
       setState({ ...IDLE, email: forEmail, error: DEAD_STATUS_MESSAGES[result.status] })
     }
     return false
@@ -63,6 +66,8 @@ export default function useEmailVerification(email) {
     try {
       const result = await sendEmailVerification(current)
       if (token !== requestToken.current) return
+      requestToken.current += 1 // drops any poll of the old verification that is still in flight
+      activeId.current = result.verification_id
       setState({ ...IDLE, phase: 'pending', email: current, verificationId: result.verification_id, resendAt: Date.parse(result.resend_available_at) || 0 })
     } catch (err) {
       if (token !== requestToken.current) return
@@ -73,7 +78,7 @@ export default function useEmailVerification(email) {
         resendAt: err.retryAfter ? Date.now() + err.retryAfter * 1000 : s.resendAt,
       }))
     } finally {
-      if (token === requestToken.current) setBusy(false)
+      setBusy(false)
     }
   }
 
@@ -92,7 +97,7 @@ export default function useEmailVerification(email) {
       const body = err.body
       if (body?.status === 'verified') {
         await confirm(verificationId, forEmail).catch(() => {})
-      } else if (DEAD_STATUS_MESSAGES[body?.status]) {
+      } else if (DEAD_STATUS_MESSAGES[body?.status] && activeId.current === verificationId) {
         setState({ ...IDLE, email: forEmail, error: DEAD_STATUS_MESSAGES[body.status] })
       } else {
         setState((s) => ({ ...s, error: err.message, attemptsRemaining: body?.attempts_remaining ?? s.attemptsRemaining }))

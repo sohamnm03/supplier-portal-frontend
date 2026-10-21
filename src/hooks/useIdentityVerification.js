@@ -22,7 +22,9 @@ const EMPTY = { PAN: '', GSTIN: '', AADHAAR: '' }
 // current values. Lives on the page (not on step 1) so the verified state survives moving between steps.
 // `trusted` is the values of an application that was already submitted and sent back for correction: they passed
 // verification when it was submitted, so whatever the vendor does not change stays verified.
-export default function useIdentityVerification(values, trusted = null) {
+// `restore` is for a saved draft: the values saved in it are checked again once, in the background, so the form comes back as it
+// was left (what was verified stays verified) without pressing Verify again. Nothing in the form is changed by that check.
+export default function useIdentityVerification(values, trusted = null, restore = false) {
   const enabled = VERIFICATION_MODE === 'new'
   const [verified, setVerified] = useState(() => {
     if (!trusted) return EMPTY
@@ -94,6 +96,24 @@ export default function useIdentityVerification(values, trusted = null) {
     if (changed.length) setVerified((all) => ({ ...all, ...Object.fromEntries(changed.map((service) => [service, ''])) }))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [now.PAN, now.GSTIN, now.AADHAAR])
+
+  const verifiedNow = useRef(verified)
+  verifiedNow.current = verified
+  useEffect(() => {
+    if (!restore || !enabled) return undefined
+    let cancelled = false
+    ;(async () => {
+      // GSTIN first: verifying it also verifies the PAN written inside it, which then needs no check of its own.
+      for (const service of ['GSTIN', 'PAN', 'AADHAAR']) {
+        if (cancelled) return
+        const value = SHAPES[service].normalise(latest.current[FORM_FIELD[service]])
+        if (!value || !SHAPES[service].pattern.test(value) || verifiedNow.current[service] === value) continue
+        await verify(service, { silent: true })
+      }
+    })()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   return { enabled, isVerified, isBusy: (service) => Boolean(busy[service]), failure, pending, blocked: pending.length > 0, verify }
 }

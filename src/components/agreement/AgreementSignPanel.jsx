@@ -1,14 +1,14 @@
-import { useEffect, useRef, useState } from 'react'
-import { Check, CheckCircle2, Mail, PenLine, RefreshCw } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { ArrowLeft, Check, CheckCircle2, FileCheck2, Mail, MessageSquareWarning, PenLine, RefreshCw, ShieldCheck, UserCheck } from 'lucide-react'
 import Button from '../common/Button'
 import Loader from '../common/Loader'
 import SignatureInput from './SignatureInput'
 import AgreementSummaryCard from './AgreementSummaryCard'
+import SignedPreviewPane from './SignedPreviewPane'
 import { sendAgreementCode, signAgreement, verifyAgreementCode } from '../../api/vendorApi'
-import { SMALL_BUTTON } from './agreementUtils'
+import { SMALL_BUTTON, keyTermTiles } from './agreementUtils'
 
 const label = 'mb-1 block text-[11px] font-bold uppercase tracking-[0.04em] text-navy-900'
-const SUCCESS_MS = 1600
 
 // One step of the vertical stepper: a numbered badge on a rail, a title with its helper, then the content.
 const Section = ({ number, title, helper, last = false, children }) => (
@@ -23,8 +23,10 @@ const Section = ({ number, title, helper, last = false, children }) => (
 
 // Signer name and designation, the signature, the one-time code and the Sign button (in a sticky footer). `canSign`
 // says whether the steps before this one are done; `onStale` is called when the agreement can no longer be signed and
-// the vendor asks to refresh. After signing, "Agreement signed" shows for a moment before `onSigned` runs.
-export default function AgreementSignPanel({ agreement, vendorName = '', canSign = true, blockedNote = '', onSigned, onStale, onDecline, footerStart = null, fill = false }) {
+// the vendor asks to refresh. With `fill` the agreement is shown beside the form and fills in live as the vendor types and
+// signs. "Sign agreement" opens a final review of the agreement (with its certificate page); nothing is signed until the
+// vendor confirms there, and then `onSigned` runs.
+export default function AgreementSignPanel({ agreement, vendorName = '', canSign = true, blockedNote = '', onSigned, onStale, onDecline, footerStart = null, fill = false, onReviewingChange = null }) {
   const agreementId = agreement.agreement_id
   const [name, setName] = useState('')
   const [designation, setDesignation] = useState('')
@@ -37,12 +39,14 @@ export default function AgreementSignPanel({ agreement, vendorName = '', canSign
   const [verifying, setVerifying] = useState(false)
   const [signing, setSigning] = useState(false)
   const [done, setDone] = useState(false)
+  const [reviewing, setReviewing] = useState(false)
+  useEffect(() => {
+    onReviewingChange?.(reviewing)
+    return () => onReviewingChange?.(false)
+  }, [reviewing]) // eslint-disable-line react-hooks/exhaustive-deps
   const [codeError, setCodeError] = useState('')
   const [signError, setSignError] = useState('')
   const [stale, setStale] = useState(false)
-  const timer = useRef(null)
-
-  useEffect(() => () => clearTimeout(timer.current), [])
 
   useEffect(() => {
     if (countdown <= 0) return undefined
@@ -98,13 +102,14 @@ export default function AgreementSignPanel({ agreement, vendorName = '', canSign
         details_confirmed: true,
       })
       setDone(true)
-      timer.current = setTimeout(() => onSigned?.(result), SUCCESS_MS)
+      onSigned?.(result)
     } catch (err) {
       if (err.status === 403) {
         setVerified(false)
+        setReviewing(false)
         setSignError(err.message || 'Please verify the code sent to your email, then sign again.')
       } else {
-        if (err.status === 409 || err.status === 410) setStale(true)
+        if (err.status === 409 || err.status === 410) { setStale(true); setReviewing(false) }
         setSignError(err.message)
       }
     } finally {
@@ -118,7 +123,7 @@ export default function AgreementSignPanel({ agreement, vendorName = '', canSign
         <div>
           <span className="mx-auto grid size-14 place-items-center rounded-full bg-emerald-100 text-emerald-700"><CheckCircle2 size={30} /></span>
           <h2 className="mt-4 text-2xl font-extrabold tracking-[-0.03em] text-navy-950">Agreement signed</h2>
-          <p className="mt-1 text-sm text-slate-600">Thank you. Taking you to the next screen…</p>
+          <p className="mt-1 text-sm text-slate-600">Thank you. Taking you to the status page…</p>
         </div>
       </div>
     )
@@ -133,14 +138,16 @@ export default function AgreementSignPanel({ agreement, vendorName = '', canSign
   ].filter(Boolean)
   const complete = ready && missing.length === 0
 
+  const previewPayload = { signer_name: name, signer_designation: designation, method: signature?.method, signature: signature?.dataUrl }
+
   const checks = [!!name.trim(), !!designation.trim(), !!signature, verified]
   const doneCount = checks.filter(Boolean).length
   const footer = (
     <div className={`border-t border-slate-200 bg-white ${fill ? '-mx-4 -mb-3 shrink-0 px-4 sm:-mx-6 sm:px-6' : 'sticky bottom-0 z-10 mt-4 px-1'}`}>
-      <div className="mx-auto flex w-full max-w-3xl flex-wrap items-center gap-2 py-2">
+      <div className={`flex w-full flex-wrap items-center gap-2 py-2 ${fill ? '' : 'mx-auto max-w-3xl'}`}>
         {footerStart}
         {onDecline && (
-          <Button variant="secondary" className={`${SMALL_BUTTON} whitespace-nowrap`} onClick={onDecline}>Decline agreement</Button>
+          <Button variant="danger" className={`${SMALL_BUTTON} whitespace-nowrap`} onClick={onDecline}><MessageSquareWarning size={15} /> Decline agreement</Button>
         )}
         <div className="ml-auto flex items-center gap-3">
           {complete ? (
@@ -148,19 +155,19 @@ export default function AgreementSignPanel({ agreement, vendorName = '', canSign
           ) : (
             <p className="hidden whitespace-nowrap text-xs font-semibold text-slate-500 sm:block" title={!canSign ? blockedNote : `Still needed: ${missing.join(', ')}`}>{doneCount} of {checks.length} completed</p>
           )}
-          <Button className={`${SMALL_BUTTON} shrink-0`} onClick={sign} disabled={!ready || signing} aria-busy={signing}>
-            {signing ? <><Loader /> Signing…</> : <><PenLine size={15} /> Sign agreement</>}
+          <Button className={`${SMALL_BUTTON} shrink-0`} onClick={() => { setSignError(''); setReviewing(true) }} disabled={!ready}>
+            <PenLine size={15} /> Sign agreement
           </Button>
         </div>
       </div>
       {!complete && missing.length > 0 && (
-        <p className="mx-auto w-full max-w-3xl pb-2 text-[11px] text-slate-500 sm:hidden">Still needed: {missing.join(', ')}</p>
+        <p className="w-full pb-2 text-[11px] text-slate-500 sm:hidden">Still needed: {missing.join(', ')}</p>
       )}
     </div>
   )
 
   const body = (
-    <div className="mx-auto w-full max-w-3xl pb-4">
+    <div className={`w-full pb-4 ${fill ? '' : 'mx-auto max-w-3xl'}`}>
       <div className="min-w-0 flex-1 space-y-3">
       <AgreementSummaryCard agreement={agreement} vendorName={vendorName} />
 
@@ -229,10 +236,89 @@ export default function AgreementSignPanel({ agreement, vendorName = '', canSign
     </div>
   )
 
-  // `fill`: the panel fills a fixed-height parent, only the body scrolls and the footer bar stays put.
+  // The final review: the whole agreement exactly as it will be signed. Nothing is saved until the vendor confirms.
+  if (reviewing) {
+    const method = { draw: 'Drawn', type: 'Typed', upload: 'Uploaded image' }[signature?.method] || ''
+    const summary = [['Signer', name.trim()], ['Designation', designation.trim()], ['Signature', method], ['Agreement', agreement.agreement_no ? `${agreement.agreement_no}${agreement.version ? ` · Version ${agreement.version}` : ''}` : ''], ...keyTermTiles(agreement)].filter(([, value]) => value)
+    return (
+      <div className={`flex flex-col ${fill ? 'min-h-0 flex-1' : ''}`}>
+        <div className={`grid gap-3 ${fill ? 'min-h-0 flex-1 lg:grid-cols-[minmax(260px,300px)_minmax(0,1fr)]' : 'lg:grid-cols-[minmax(260px,300px)_minmax(0,1fr)]'}`}>
+          <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1 [scrollbar-width:thin]">
+            <section className="rounded-xl border border-blue-200 bg-[#eef7ff] px-3.5 py-3">
+              <p className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.06em] text-brand-700"><CheckCircle2 size={14} /> One last check</p>
+              <p className="mt-1 text-xs leading-5 text-slate-600">This is exactly what will be signed. Nothing is signed until you press <b className="text-navy-900">Confirm and sign</b>.</p>
+            </section>
+
+            <section className="rounded-xl border border-[#dce6f1] bg-white" aria-label="Your signing details">
+              <dl className="divide-y divide-slate-100">
+                {summary.map(([term, value]) => (
+                  <div key={term} className="flex items-baseline justify-between gap-3 px-3.5 py-2">
+                    <dt className="shrink-0 text-[10px] font-bold uppercase tracking-[0.06em] text-slate-500">{term}</dt>
+                    <dd className="min-w-0 break-words text-right text-[13px] font-semibold text-navy-900">{value}</dd>
+                  </div>
+                ))}
+                <div className="flex items-center justify-between gap-3 px-3.5 py-2">
+                  <dt className="text-[10px] font-bold uppercase tracking-[0.06em] text-slate-500">Email</dt>
+                  <dd className="inline-flex items-center gap-1 text-[12px] font-bold text-emerald-700"><Check size={13} /> Verified</dd>
+                </div>
+              </dl>
+              {signature?.dataUrl && (
+                <div className="border-t border-slate-100 px-3.5 py-2.5">
+                  <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.06em] text-slate-500">Your signature</p>
+                  <div className="grid h-20 place-items-center rounded-lg border border-dashed border-slate-200 bg-white px-2">
+                    <img src={signature.dataUrl} alt="Your signature" className="max-h-16 max-w-full object-contain" />
+                  </div>
+                </div>
+              )}
+            </section>
+
+            <section aria-label="What happens next">
+              <p className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">What happens when you confirm</p>
+              <ol className="space-y-2">
+                {[
+                  [PenLine, 'Your signature is added and the time of signing is recorded'],
+                  [FileCheck2, 'A certificate page is added, and the signed copy is saved for you to view or download any time'],
+                  [UserCheck, 'It goes to our team for the final approval of your account'],
+                ].map(([Icon, text]) => (
+                  <li key={text} className="flex items-start gap-2.5">
+                    <span className="grid size-6 shrink-0 place-items-center rounded-full bg-brand-50 text-brand-700"><Icon size={13} /></span>
+                    <span className="text-xs leading-5 text-slate-600">{text}</span>
+                  </li>
+                ))}
+              </ol>
+            </section>
+            <p className="flex items-start gap-1.5 px-1 text-[11px] leading-5 text-slate-500"><ShieldCheck size={13} className="mt-0.5 shrink-0 text-slate-400" /> By confirming, you sign this agreement electronically. It is legally binding on your company.</p>
+          </aside>
+
+          <div className={fill ? 'min-h-0' : 'h-[70vh] min-h-[420px]'}>
+            <SignedPreviewPane agreementId={agreementId} payload={previewPayload} final debounceMs={0} label="Final agreement" hint="Read it from the top. The certificate page is last." fileName={`${agreement.agreement_no || 'agreement'}_preview.pdf`} />
+          </div>
+        </div>
+        {signError && <p role="alert" className="mt-2 shrink-0 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-800">{signError}</p>}
+        <div className={`mt-2 shrink-0 border-t border-slate-200 bg-white ${fill ? '-mx-4 -mb-3 px-4 sm:-mx-6 sm:px-6' : 'px-1'}`}>
+          <div className="flex w-full flex-wrap items-center gap-2 py-2">
+            <Button variant="secondary" className={`${SMALL_BUTTON} whitespace-nowrap`} onClick={() => { setSignError(''); setReviewing(false) }} disabled={signing}><ArrowLeft size={15} /> Back to edit</Button>
+            <div className="ml-auto">
+              <Button className={`${SMALL_BUTTON} shrink-0`} onClick={sign} disabled={signing} aria-busy={signing}>
+                {signing ? <><Loader /> Signing…</> : <><PenLine size={15} /> Confirm and sign</>}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // `fill`: the panel fills a fixed-height parent, the form (left) and the live agreement (right) scroll on their own and
+  // the footer bar stays put. The live agreement is left out on small screens; the final review shows it there.
   return fill ? (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="min-h-0 flex-1 overflow-y-auto pr-1 [scrollbar-width:thin]">{body}</div>
+      <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(380px,460px)_minmax(0,1fr)]">
+        <div className="min-h-0 overflow-y-auto pr-1 [scrollbar-width:thin]">{body}</div>
+        <div className="hidden min-h-0 pb-3 lg:block">
+          <SignedPreviewPane agreementId={agreementId} payload={previewPayload} hint="Updates as you type and sign" />
+        </div>
+      </div>
       {footer}
     </div>
   ) : (
