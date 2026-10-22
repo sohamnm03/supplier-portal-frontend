@@ -23,15 +23,26 @@ function resolveBlobUrl(invoice) {
     ?? ''
 }
 
-function normalizeInvoice(invoice, index) {
+// The latest thing that happened to an invoice: its upload, or any later action (a return, a replacement, a status change). The list shows
+// the most recently touched invoices first.
+function latestActivity(invoice, fallback) {
+  const times = [invoice.created_at, invoice.uploaded_at, invoice.updated_at, invoice.replaced_at, invoice.returned_at]
+    .map((value) => (value ? new Date(value).getTime() : NaN))
+    .filter((time) => !Number.isNaN(time))
+  return times.length ? new Date(Math.max(...times)) : fallback
+}
+
+export function normalizeInvoice(invoice, index) {
   const id = invoice.invoice_id ?? invoice.id ?? `invoice-${index}`
+  const uploadedAt = toValidDate(invoice.uploaded_at ?? invoice.created_at ?? invoice.invoice_date)
   return {
     ...invoice,
     id,
+    activityAt: latestActivity(invoice, uploadedAt),
     name: invoice.original_file_name ?? invoice.file_name ?? invoice.filename ?? invoice.invoice_number ?? invoice.name ?? `Invoice ${id}`,
     size: Number(invoice.file_size_bytes ?? invoice.file_size ?? invoice.size) || 0,
     type: invoice.mime_type ?? invoice.content_type ?? invoice.type ?? '',
-    uploadedAt: toValidDate(invoice.uploaded_at ?? invoice.created_at ?? invoice.invoice_date),
+    uploadedAt,
     url: invoice.file_url ?? invoice.document_url ?? invoice.url ?? '',
     blobUrl: resolveBlobUrl(invoice),
     mainLineItemData: invoice.main_line_item_data ?? invoice.mainLineItemData ?? invoice.line_item_data ?? invoice.line_items ?? null,

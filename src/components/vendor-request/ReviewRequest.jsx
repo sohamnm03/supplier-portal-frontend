@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { ArrowLeft, Edit3, Send } from 'lucide-react'
+import { ArrowLeft, Edit3, Eye, Send } from 'lucide-react'
 import Button from '../common/Button'
 import Checkbox from '../common/Checkbox'
 import Loader from '../common/Loader'
 import { joinPhone } from '../../data/countryCodes'
 import { documentTypes } from '../../data/documentTypes'
+import { newDocumentId, uploadedDocumentId } from '../../utils/documentPreview'
 import { displayValue, maskAadhaar, maskAccountNumber } from '../../utils/formatters'
 import TermsPolicyModal from './TermsPolicyModal'
 import { isCompanyType } from '../../data/vendorTypes'
@@ -43,9 +44,9 @@ const sections = [
   },
 ]
 
-// existingDocuments is what is already on file ({ [typeKey]: [{ original_name }] }); `documents` are new files picked in this
+// existingDocuments is what is already uploaded ({ [typeKey]: [{ original_name }] }); `documents` are new files picked in this
 // session, which replace it. unresolvedCount is how many flagged items of a returned application are still open.
-export default function ReviewRequest({ values, documents = {}, existingDocuments = {}, register, setValue, errors, onEdit, onBack, submitting, declarationsComplete, isResubmission = false, unresolvedCount = 0 }) {
+export default function ReviewRequest({ values, documents = {}, existingDocuments = {}, onPreview, register, setValue, errors, onEdit, onBack, submitting, declarationsComplete, isResubmission = false, unresolvedCount = 0 }) {
   const [termsOpen, setTermsOpen] = useState(false)
 
   const handleTermsClick = (event) => {
@@ -98,13 +99,28 @@ export default function ReviewRequest({ values, documents = {}, existingDocument
             </button>
           </div>
           <dl className="grid grid-cols-1 gap-x-5 gap-y-3 p-4 sm:grid-cols-2 xl:grid-cols-3">
-            {documentTypes.map(({ key, label }) => (
+            {documentTypes.map(({ key, label, max }) => (
               <div key={key}>
                 <dt className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">{label}</dt>
                 <dd className="mt-0.5 break-words text-xs font-semibold text-slate-800">
-                  {documents[key]?.length
-                    ? documents[key].map((file) => file.name).join(', ')
-                    : existingDocuments[key]?.length ? `${existingDocuments[key].map((file) => file.original_name).join(', ')} (on file)` : '—'}
+                  {documents[key]?.length || existingDocuments[key]?.length ? (
+                    <ul className="space-y-0.5">
+                      {[
+                        // A one-file type shows its not-yet-uploaded file instead of the uploaded one (it replaces it); several-file types show both.
+                        ...(max > 1 || !documents[key]?.length ? (existingDocuments[key] || []).map((file) => ({ id: uploadedDocumentId(file), name: file.original_name, uploaded: true, canOpen: Boolean(file.blob_name) })) : []),
+                        ...(documents[key] || []).map((file, index) => ({ id: newDocumentId(key, index), name: file.name, uploaded: false })),
+                      ].map((entry) => (
+                        <li key={entry.id} className="flex items-center gap-1.5">
+                          <span className="min-w-0 truncate" title={entry.name}>{entry.name}{entry.uploaded ? ' (uploaded)' : ' (not uploaded)'}</span>
+                          {onPreview && (entry.uploaded ? entry.canOpen : true) && (
+                            <button type="button" onClick={() => onPreview(entry.id)} aria-label={`Preview ${entry.name}`} title="Preview" className="grid size-6 shrink-0 place-items-center rounded-md text-slate-500 transition hover:bg-blue-50 hover:text-brand-700">
+                              <Eye size={14} />
+                            </button>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : '—'}
                 </dd>
               </div>
             ))}

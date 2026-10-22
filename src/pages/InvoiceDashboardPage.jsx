@@ -10,9 +10,11 @@ import InvoiceList from '../components/invoices/InvoiceList'
 import ReadFailureModal from '../components/invoices/ReadFailureModal'
 import useInvoiceUploads from '../hooks/useInvoiceUploads'
 import useAuth from '../hooks/useAuth'
+import useAgreementHold, { HOLD_TOOLTIP } from '../hooks/useAgreementHold'
 
 export default function InvoiceDashboardPage() {
   const { user } = useAuth()
+  const { onHold } = useAgreementHold()
   const [renewalReady, setRenewalReady] = useState(false)
   const [uploadSignal, setUploadSignal] = useState(0)
   const { invoices, addFiles, removeInvoice, extractInvoice, error, clearError, loadError, isLoading, reload, readFailures, dismissReadFailures } = useInvoiceUploads(user?.vendor_id)
@@ -39,7 +41,16 @@ export default function InvoiceDashboardPage() {
             <p className="mt-1 text-xs text-[#59728f]">Upload your invoices and track their extraction status, amounts and dates. Invoices uploaded on your behalf by your Relationship Manager also appear here.</p>
             {!isLoading && !loadError && invoices.length > 0 && <div className="mt-3"><InvoiceKpis invoices={invoices} /></div>}
           </div>
-          <InvoiceUploader onFiles={(files) => { if (addFiles(files)) setUploadSignal((count) => count + 1) }} error={error} onDismissError={clearError} />
+          {/* While on hold (no agreement in force) uploads and replacements are refused by the server; the controls are frozen here. */}
+          <div className="relative shrink-0" title={onHold ? HOLD_TOOLTIP : undefined}>
+            <InvoiceUploader onFiles={(files) => { if (addFiles(files)) setUploadSignal((count) => count + 1) }} error={error} onDismissError={clearError} />
+            {onHold && <div className="absolute inset-0 z-10 cursor-not-allowed rounded-xl bg-white/60" aria-label={HOLD_TOOLTIP} />}
+          </div>
+          <div
+            data-agreement-hold={onHold ? 'true' : undefined}
+            className="contents"
+            onClickCapture={(event) => { if (onHold && event.target.closest?.('button[title*="eplace invoice"]')) { event.preventDefault(); event.stopPropagation() } }}
+          >
           <InvoiceList
             invoices={invoices}
             onRemove={removeInvoice}
@@ -50,6 +61,7 @@ export default function InvoiceDashboardPage() {
             uploadSignal={uploadSignal}
             onReplaced={reload}
           />
+          </div>
         </div>
         <ReadFailureModal failures={readFailures} onClose={dismissReadFailures} onRetry={(files) => { dismissReadFailures(); if (addFiles(files)) setUploadSignal((count) => count + 1) }} />
       </PageContainer>

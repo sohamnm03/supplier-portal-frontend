@@ -104,26 +104,55 @@ export async function lookupPincode(pincode) {
 }
 
 // documents is { [typeKey]: File[] }; each type goes up under its own form field name.
-export async function uploadVendorDocuments(vendorId, documents) {
+// `append` adds to what is uploaded for a type that takes several files; by default a type's new files replace its earlier ones.
+export async function uploadVendorDocuments(vendorId, documents, { append = false } = {}) {
   const formData = new FormData()
   Object.entries(documents).forEach(([type, files]) => files.forEach((file) => formData.append(type, file)))
 
-  const response = await authFetch(`/vendors/${vendorId}/documents`, { method: 'POST', body: formData })
+  const response = await authFetch(`/vendors/${vendorId}/documents${append ? '?append=1' : ''}`, { method: 'POST', body: formData })
   const body = await response.json().catch(() => null)
   if (!response.ok) throw new Error(body?.error || 'Unable to upload the supporting documents.')
   return body
 }
 
-// What is already on file for the application, grouped by document type: { pan: [{ original_name, size }], ... }.
-export async function getMyDocuments() {
-  const response = await authFetch('/vendors/me/documents')
-  const body = await response.json().catch(() => null)
-  if (!response.ok) throw new Error(body?.error || 'Unable to load your documents.')
+// The uploaded documents grouped by type: { pan: [{ original_name, size, blob_name }], ... }.
+function groupDocuments(body) {
   const grouped = {}
   for (const document of body?.documents || []) {
     if (document.type) (grouped[document.type] ||= []).push(document)
   }
   return grouped
+}
+
+// What has already been uploaded for the application, grouped by document type.
+export async function getMyDocuments() {
+  const response = await authFetch('/vendors/me/documents')
+  const body = await response.json().catch(() => null)
+  if (!response.ok) throw new Error(body?.error || 'Unable to load your documents.')
+  return groupDocuments(body)
+}
+
+// The bytes of one uploaded document for the preview. Fetched with the token and shown through a blob: URL, so no token is put in a URL.
+export async function fetchMyDocumentBlob(blobName) {
+  let response
+  try {
+    response = await authFetch(`/vendors/me/documents/content?${new URLSearchParams({ blob_name: blobName })}`)
+  } catch {
+    throw new Error('Unable to load the document. Please check your connection and try again.')
+  }
+  if (!response.ok) {
+    const body = await response.json().catch(() => null)
+    throw new Error(body?.error || 'Unable to load the document right now.')
+  }
+  return response.blob()
+}
+
+// Removes one uploaded document (`blobName` is the file's identifier from the listing); resolves to the documents that are left.
+export async function deleteMyDocument(docType, blobName) {
+  const response = await authFetch('/vendors/me/documents', jsonRequest('DELETE', { doc_type: docType, blob_name: blobName }))
+  const body = await response.json().catch(() => null)
+  if (!response.ok) throw new Error(body?.error || 'Unable to remove the document. Please try again.')
+  return groupDocuments(body)
 }
 
 export async function loginVendor(email, password) {
@@ -246,6 +275,25 @@ export async function getVendorInvoices(vendorId) {
   const invoices = Array.isArray(body) ? body : body?.invoices ?? body?.data
   return Array.isArray(invoices) ? invoices : []
 }
+
+// The earlier versions of a replaced invoice: { current_version, versions: [...], earlier_versions_not_kept }.
+async function invoiceVersionCall(path, fallback) {
+  let response
+  try {
+    response = await authFetch(path)
+  } catch {
+    throw new Error(fallback)
+  }
+  const body = await response.json().catch(() => null)
+  if (!response.ok) throw new Error(body?.error || fallback)
+  return body
+}
+
+export const getInvoiceVersions = (invoiceId) => invoiceVersionCall(`/invoices/${invoiceId}/versions`, 'Unable to load the earlier versions.')
+// One earlier version, shaped like an invoice from getVendorInvoices.
+export const getInvoiceVersion = (invoiceId, versionNo) => invoiceVersionCall(`/invoices/${invoiceId}/versions/${versionNo}`, 'Unable to open this version.')
+// Where that version's original file is kept ({ blob_url, ... }); open it with getInvoicePreviewUrl like the current file.
+export const getInvoiceVersionFile = (invoiceId, versionNo) => invoiceVersionCall(`/invoices/${invoiceId}/versions/${versionNo}/file`, 'The original file of this version is not available.')
 
 export async function getInvoicePreviewUrl(blobUrl) {
   if (!blobUrl) throw new Error('This invoice does not include a blob URL.')
@@ -532,6 +580,11 @@ export async function verifyAgreementPublic(no, h) {
   }
   return body || { valid: false }
 }
+
+// Renewal request (an ending or ended agreement): the window and any open request / last outcome, asking, and cancelling.
+export const getRenewal = () => agreementCall('/vendors/me/renewal', undefined, 'Unable to load your renewal details.')
+export const requestRenewal = (payload) => agreementCall('/vendors/me/renewal-request', jsonRequest('POST', payload), 'Unable to send your request. Please try again.')
+export const cancelRenewal = () => agreementCall('/vendors/me/renewal-request', { method: 'DELETE' }, 'Unable to cancel your request. Please try again.')
 
 // The agreement PDF as a Blob (the reading view makes its own blob: URL and reads the page count from it).
 export const fetchAgreementPdfBlob = (id) => agreementPdfBlob(id, false)

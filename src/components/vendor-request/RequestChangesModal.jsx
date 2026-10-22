@@ -10,7 +10,7 @@ const SECTION_TITLES = { Contact: 'Contact', Vendor: 'Company & tax details', Ad
 
 // Lets a vendor whose application is under review pick the details they want to change. Sending the request tells the
 // maker or checker, who then sends the application back so the vendor can edit those fields themselves.
-// With `agreementId` it is the "Something is wrong" of the agreement's details review: the same picker plus a note, and sending
+// With `agreementId` it is the "Request changes" of the agreement's details review: the same picker plus a note, and sending
 // it declines that agreement as a change request for the checker.
 export default function RequestChangesModal({ open, onClose, onSent, agreementId = null }) {
   const [note, setNote] = useState('')
@@ -88,7 +88,7 @@ export default function RequestChangesModal({ open, onClose, onSent, agreementId
             <span className="grid size-10 shrink-0 place-items-center rounded-full bg-white text-brand-700 shadow-sm ring-1 ring-blue-100"><PencilLine size={19} /></span>
             <div>
               <p className="eyebrow">{agreementId ? 'Before you sign' : 'Application under review'}</p>
-              <h2 id="request-changes-title" className="mt-0.5 text-xl font-extrabold tracking-[-0.02em] text-navy-950">{agreementId ? 'Something is wrong' : 'Request changes'}</h2>
+              <h2 id="request-changes-title" className="mt-0.5 text-xl font-extrabold tracking-[-0.02em] text-navy-950">Request changes</h2>
             </div>
           </div>
           <button type="button" onClick={onClose} disabled={busy} aria-label="Close dialog" className="interactive-icon -mr-2 min-h-9! min-w-9!"><X size={18} /></button>

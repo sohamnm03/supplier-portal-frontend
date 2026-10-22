@@ -4,6 +4,7 @@ import { ArrowLeft, ChevronRight, FileCheck2, FilePenLine, FileText, Home, LogOu
 import AppLogo from '../common/AppLogo'
 import useAuth from '../../hooks/useAuth'
 import VendorProfilePanel from './VendorProfilePanel'
+import AgreementBanner from './AgreementBanner'
 import { OPEN_PROFILE_EVENT } from '../../utils/events'
 import { STAGES, WAITING_STAGES, homeForStage } from '../../utils/stages'
 
@@ -92,6 +93,8 @@ export default function AppShell({ breadcrumb, children, backTo, onBack }) {
           </div>
         </div>
       </header>}
+
+      {isActive && !backTo && <AgreementBanner />}
 
       <div className="relative z-10 flex min-h-0 flex-1">
         {showSidebar && (

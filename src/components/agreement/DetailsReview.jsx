@@ -1,3 +1,9 @@
+import { useEffect, useMemo, useState } from 'react'
+import { Check, Eye, Minus, Paperclip } from 'lucide-react'
+import { documentTypes } from '../../data/documentTypes'
+import { getMyDocuments } from '../../api/vendorApi'
+import { documentPreviewItems } from '../../utils/documentPreview'
+import DocumentPreview from '../vendor-request/DocumentPreview'
 import { displayProfileValue, isRegisteredMsme, sections } from '../layout/profileFields'
 import { isCompanyType } from '../../data/vendorTypes'
 
@@ -13,6 +19,16 @@ const SNAPSHOT_KEY = {
 
 // The vendor's registered details, read-only, (the confirmation sits in the page footer).
 export default function DetailsReview({ profile, updateInfo = null }) {
+  // The supporting documents on file, each opening in the same viewer the application form uses. null while loading.
+  const [documents, setDocuments] = useState(null)
+  const [previewId, setPreviewId] = useState(null)
+  useEffect(() => {
+    let ignore = false
+    getMyDocuments().then((grouped) => { if (!ignore) setDocuments(grouped) }).catch(() => { if (!ignore) setDocuments({}) })
+    return () => { ignore = true }
+  }, [])
+  const documentItems = useMemo(() => documentPreviewItems({}, documents || {}), [documents])
+  const uploadedCount = documentTypes.filter(({ key }) => documentItems.some((item) => item.type === key)).length
   // On a re-issued agreement, the fields that changed since the previous version are flagged for a second look.
   const changedKeys = new Set(updateInfo?.changed_keys || [])
   const oldValue = (key) => (updateInfo?.changes || []).find((change) => change.key === key)?.from
@@ -37,6 +53,36 @@ export default function DetailsReview({ profile, updateInfo = null }) {
           </div>
         </section>
       ))}
+      <section className="overflow-hidden rounded-lg border border-[#dce6f1] bg-white">
+        <h3 className="flex items-center gap-1.5 border-b border-[#dce6f1] bg-[#eef7ff] px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.04em] text-[#29466a]">
+          <Paperclip size={13} className="text-brand-600" /> Supporting documents
+          {documents !== null && <span className="ml-auto rounded-full bg-white px-2 py-px text-[10.5px] font-bold normal-case tracking-normal text-slate-600 ring-1 ring-[#dce6f1]">{uploadedCount} of {documentTypes.length} uploaded</span>}
+        </h3>
+        {documents === null ? (
+          <p className="px-3 py-2.5 text-xs text-slate-500">Loading documents…</p>
+        ) : (
+          <ul className="grid gap-2 px-3 py-2.5 sm:grid-cols-2 lg:grid-cols-3">
+            {documentTypes.map(({ key, label }) => {
+              const files = documentItems.filter((item) => item.type === key)
+              const uploaded = files.length > 0
+              return (
+                <li key={key} className={`flex min-w-0 items-center gap-2 rounded-lg border px-2.5 py-1.5 ${uploaded ? 'border-emerald-200 bg-emerald-50/50' : 'border-dashed border-slate-200 bg-slate-50/60'}`}>
+                  <span className={`grid size-4.5 shrink-0 place-items-center rounded-full ${uploaded ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-400'}`}>
+                    {uploaded ? <Check size={11} strokeWidth={3} aria-hidden="true" /> : <Minus size={11} strokeWidth={3} aria-hidden="true" />}
+                  </span>
+                  <span className={`min-w-0 flex-1 truncate text-[12.5px] font-bold leading-5 ${uploaded ? 'text-navy-900' : 'text-slate-500'}`} title={label}>{label}</span>
+                  {uploaded ? files.map((item, index) => (
+                    <button key={item.id} type="button" onClick={() => setPreviewId(item.id)} title={item.name} aria-label={`View ${label}: ${item.name}`} className="inline-flex shrink-0 items-center gap-1 rounded-md bg-transparent! p-0! px-1.5! min-h-0! text-xs! font-bold! text-brand-700 shadow-none! transition hover:bg-white! focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-600/40">
+                      <Eye size={13} aria-hidden="true" /> View{files.length > 1 ? ` ${index + 1}` : ''}
+                    </button>
+                  )) : <span className="shrink-0 text-[11px] font-semibold text-slate-400">Not provided</span>}
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </section>
+      <DocumentPreview items={documentItems} activeId={previewId} onChange={setPreviewId} onClose={() => setPreviewId(null)} />
     </div>
   )
 }

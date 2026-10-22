@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { AlertTriangle, ArrowLeft, ArrowRight, CalendarCheck, CheckCircle2, CalendarPlus, CalendarClock, CalendarRange, Download, Eye, FilePenLine, FileSignature, PenLine, RefreshCw, Send } from 'lucide-react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { CalendarClock as RenewalIcon, AlertTriangle, ArrowLeft, ArrowRight, CalendarCheck, CheckCircle2, CalendarPlus, CalendarClock, CalendarRange, Download, Eye, FilePenLine, FileSignature, PenLine, RefreshCw, Send } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import PageContainer from '../components/layout/PageContainer'
 import Button from '../components/common/Button'
 import Loader from '../components/common/Loader'
 import AgreementViewDialog from '../components/agreement/AgreementViewDialog'
+import RenewalRequestDialog from '../components/agreement/RenewalRequestDialog'
 import { SMALL_BUTTON, STATE_BADGES, daysLeft, formatDate, formatPeriod } from '../components/agreement/agreementUtils'
-import { downloadAgreement, getMyAgreements } from '../api/vendorApi'
+import { cancelRenewal, downloadAgreement, getMyAgreements, getRenewal } from '../api/vendorApi'
 import useAuth from '../hooks/useAuth'
 import { STAGES } from '../utils/stages'
 
@@ -60,6 +61,10 @@ export default function AgreementsPage() {
   const [error, setError] = useState('')
   const [viewing, setViewing] = useState(null)
   const [busyId, setBusyId] = useState(null)
+  const [renewalInfo, setRenewalInfo] = useState(null)
+  const [renewalOpen, setRenewalOpen] = useState(false)
+  const [cancelling, setCancelling] = useState(false)
+  const [params, setParams] = useSearchParams()
   const isActive = stage === STAGES.active
 
   const load = useCallback(async () => {
@@ -67,6 +72,23 @@ export default function AgreementsPage() {
     try { setAgreements(await getMyAgreements()) } catch (err) { setError(err.message); setAgreements((value) => value || []) }
   }, [])
   useEffect(() => { load() }, [load])
+
+  // The renewal window, the open request and the last outcome (active vendors only).
+  const loadRenewal = useCallback(async () => {
+    try { setRenewalInfo(await getRenewal()) } catch { setRenewalInfo(null) }
+  }, [])
+  useEffect(() => { if (stage === STAGES.active) loadRenewal() }, [stage, loadRenewal])
+  // The banner's "Request renewal" link opens the dialog straight away.
+  useEffect(() => {
+    if (params.get('renew') && renewalInfo) {
+      if (renewalInfo.can_request) setRenewalOpen(true)
+      setParams({}, { replace: true })
+    }
+  }, [params, renewalInfo, setParams])
+  const withdrawRenewal = async () => {
+    setCancelling(true)
+    try { setRenewalInfo(await cancelRenewal()) } catch (err) { setError(err.message) } finally { setCancelling(false) }
+  }
 
   const download = async (item) => {
     setBusyId(item.agreement_id)
@@ -169,6 +191,39 @@ export default function AgreementsPage() {
                     <button type="button" onClick={() => setViewing(renewal)} className={`${BTN} ${BTN_SECONDARY}`}><Eye size={15} /> Read it first</button>
                     <button type="button" onClick={() => navigate(`/agreements/${renewal.agreement_id}/sign`, { state: { agreement: renewal } })} className={`${BTN} ${BTN_PRIMARY}`}><PenLine size={15} /> Review and sign</button>
                   </div>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {renewalInfo && (renewalInfo.can_request || renewalInfo.open_request || renewalInfo.last_outcome) && (
+            <section className={`${card} shrink-0`} aria-label="Renewal">
+              <div className="flex flex-col gap-3 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex min-w-0 items-start gap-3">
+                  <span className="grid size-10 shrink-0 place-items-center rounded-full bg-brand-50 text-brand-700"><RenewalIcon size={18} /></span>
+                  <div className="min-w-0 text-xs leading-5 text-slate-600">
+                    <h2 className="text-[11px] font-bold uppercase tracking-[0.04em] text-[#29466a]">Renewal</h2>
+                    {renewalInfo.open_request ? (
+                      <>
+                        <p className="mt-0.5 text-[13px] font-bold text-navy-900">Requested{renewalInfo.open_request.requested_at ? ` on ${formatDate(renewalInfo.open_request.requested_at)}` : ''}</p>
+                        <p>Start {formatDate(renewalInfo.open_request.start_date)} · {renewalInfo.open_request.term_months} {Number(renewalInfo.open_request.term_months) === 1 ? 'month' : 'months'}</p>
+                        {renewalInfo.open_request.note && <p className="mt-0.5 break-words italic">“{renewalInfo.open_request.note}”</p>}
+                      </>
+                    ) : renewalInfo.last_outcome ? (
+                      <p className="mt-0.5 text-[13px] font-semibold text-navy-900">
+                        {renewalInfo.last_outcome.status === 'declined' ? `Declined${renewalInfo.last_outcome.reason ? `: ${renewalInfo.last_outcome.reason}` : ''}` : renewalInfo.last_outcome.status === 'fulfilled' ? 'Renewal issued' : 'Cancelled'}
+                        {renewalInfo.last_outcome.at && <span className="ml-1.5 text-xs font-medium text-slate-500">{formatDate(renewalInfo.last_outcome.at)}</span>}
+                      </p>
+                    ) : (
+                      <p className="mt-0.5 text-[13px] font-semibold text-navy-900">Your agreement is ending. Ask for a renewal.</p>
+                    )}
+                  </div>
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  {renewalInfo.open_request && (
+                    <button type="button" onClick={withdrawRenewal} disabled={cancelling} className={`${BTN} ${BTN_SECONDARY}`}>{cancelling ? <Loader /> : null} Cancel request</button>
+                  )}
+                  {renewalInfo.can_request && <button type="button" onClick={() => setRenewalOpen(true)} className={`${BTN} ${BTN_PRIMARY}`}>Request renewal</button>}
                 </div>
               </div>
             </section>
@@ -341,6 +396,7 @@ export default function AgreementsPage() {
         onClose={() => setViewing(null)}
         onSign={viewing && viewing.can_sign && viewing.status === 'sent' ? () => navigate(`/agreements/${viewing.agreement_id}/sign`, { state: { agreement: viewing } }) : null}
       />
+      <RenewalRequestDialog open={renewalOpen} renewal={renewalInfo} onClose={() => setRenewalOpen(false)} onDone={loadRenewal} />
     </AppShell>
   )
 }

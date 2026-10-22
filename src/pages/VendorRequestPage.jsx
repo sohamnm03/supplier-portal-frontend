@@ -15,6 +15,9 @@ import BankDetails from '../components/vendor-request/BankDetails'
 import ReviewRequest from '../components/vendor-request/ReviewRequest'
 import ReturnedBanner from '../components/vendor-request/ReturnedBanner'
 import SupportingDocuments from '../components/vendor-request/SupportingDocuments'
+import DocumentPreview from '../components/vendor-request/DocumentPreview'
+import { documentPreviewItems, fileKey } from '../utils/documentPreview'
+import { documentTypes } from '../data/documentTypes'
 import useVendorRequest from '../hooks/useVendorRequest'
 import useAuth from '../hooks/useAuth'
 import useIdentityVerification from '../hooks/useIdentityVerification'
@@ -22,10 +25,9 @@ import { FORM_STEPS, PAN_TAKEN_MESSAGE, STEP_FIELDS } from '../utils/constants'
 import { KEY_BY_FORM_FIELD, buildFlags, stepOfFlag } from '../utils/rejectionFields'
 import { STAGES } from '../utils/stages'
 import { isValidPhone } from '../data/countryCodes'
-import { documentTypes } from '../data/documentTypes'
 import { isCompanyType } from '../data/vendorTypes'
 import { FlagsContext } from '../context/flags-context'
-import { checkPanExists, getMyDocuments, saveOnboardingDraft, submitOnboarding, uploadVendorDocuments } from '../api/vendorApi'
+import { checkPanExists, deleteMyDocument, getMyDocuments, saveOnboardingDraft, submitOnboarding, uploadVendorDocuments } from '../api/vendorApi'
 
 const trustPoints = [
   { icon: ShieldCheck, label: 'Secure verification' },
@@ -68,9 +70,17 @@ export default function VendorRequestPage() {
     gstin: profile.gstin && profile.vendor_legal_name ? String(profile.gstin).trim().toUpperCase() : '',
     message: 'GSTIN verified. Details are locked.',
   }))
-  // New files picked in this session ({ [typeKey]: File[] }), and what is already on file for the application.
+  // New files picked in this session ({ [typeKey]: File[] }), and what is already uploaded for the application.
   const [documents, setDocuments] = useState({})
   const [existingDocuments, setExistingDocuments] = useState({})
+  const [previewId, setPreviewId] = useState(null)
+  // A picked file goes to storage straight away. `documents` then only holds the files that are not uploaded yet (uploading or failed);
+  // `uploadState` is { [fileKey]: { status: 'uploading' | 'failed', error } }. Uploads of one type run one after another.
+  const [uploadState, setUploadState] = useState({})
+  const [uploadedTypes, setUploadedTypes] = useState([])
+  const uploadChain = useRef({})
+  const uploading = Object.values(uploadState).some((entry) => entry.status === 'uploading')
+  const previewItems = useMemo(() => documentPreviewItems(documents, existingDocuments), [documents, existingDocuments])
   // Flagged items the vendor checked and says are correct as entered: form field names, and `doc:<type>` for documents.
   const [confirmed, setConfirmed] = useState(() => new Set())
 
@@ -103,7 +113,7 @@ export default function VendorRequestPage() {
   })
   const documentFlags = {}
   Object.entries(flagDefs.documents).forEach(([type, def]) => {
-    documentFlags[type] = { ...def, status: confirmed.has(`doc:${type}`) ? 'confirmed' : documents[type]?.length || def.fixed ? 'changed' : 'open' }
+    documentFlags[type] = { ...def, status: confirmed.has(`doc:${type}`) ? 'confirmed' : documents[type]?.length || uploadedTypes.includes(type) || def.fixed ? 'changed' : 'open' }
   })
 
   const flaggedItems = [
@@ -161,14 +171,50 @@ export default function VendorRequestPage() {
   }, [hasFlags])
 
   // --- Saving ---------------------------------------------------------------------------------------------------
-  const setDocumentFiles = (type, files) => {
+  const dropPending = (type, files) => {
+    const keys = files.map((file) => fileKey(type, file))
     setDocuments((current) => {
+      const left = (current[type] || []).filter((file) => !files.includes(file))
       const next = { ...current }
-      if (files.length > 0) next[type] = files
+      if (left.length > 0) next[type] = left
       else delete next[type]
       return next
     })
+    setUploadState((current) => {
+      const next = { ...current }
+      keys.forEach((key) => delete next[key])
+      return next
+    })
   }
+
+  const uploadFiles = (type, files) => {
+    const keys = files.map((file) => fileKey(type, file))
+    setUploadState((current) => ({ ...current, ...Object.fromEntries(keys.map((key) => [key, { status: 'uploading' }])) }))
+    const multiple = (documentTypes.find((item) => item.key === type)?.max || 1) > 1
+    const run = async () => {
+      try {
+        await uploadVendorDocuments(profile.vendor_id, { [type]: files }, { append: multiple })
+        dropPending(type, files)
+        setUploadedTypes((current) => (current.includes(type) ? current : [...current, type]))
+        const fresh = await getMyDocuments().catch(() => null)
+        if (fresh) setExistingDocuments(fresh)
+      } catch (err) {
+        const message = err.message || 'The upload failed. Please try again.'
+        setUploadState((current) => ({ ...current, ...Object.fromEntries(keys.map((key) => [key, { status: 'failed', error: message }])) }))
+      }
+    }
+    uploadChain.current[type] = (uploadChain.current[type] || Promise.resolve()).then(run)
+  }
+
+  // A file the vendor picked (already checked for type and size by the slot): kept in the row and uploaded now.
+  const pickDocuments = (type, incoming) => {
+    const multiple = (documentTypes.find((item) => item.key === type)?.max || 1) > 1
+    if (!multiple) setUploadState((current) => Object.fromEntries(Object.entries(current).filter(([key]) => !key.startsWith(`${type}:`))))
+    setDocuments((current) => ({ ...current, [type]: multiple ? [...(current[type] || []), ...incoming] : incoming }))
+    uploadFiles(type, incoming)
+  }
+  const removePicked = (type, file) => dropPending(type, [file])
+  const retryUpload = (type, file) => uploadFiles(type, [file])
 
   const lockGstFields = (fields) => {
     setGstLockedFields((current) => [...new Set([...current, ...fields])])
@@ -177,11 +223,6 @@ export default function VendorRequestPage() {
   // Saves the form (and any newly picked documents) to the vendor's account. Throws on failure.
   const persist = async () => {
     await saveOnboardingDraft(getValues())
-    if (Object.keys(documents).length > 0) {
-      await uploadVendorDocuments(profile.vendor_id, documents)
-      setDocuments({})
-      setExistingDocuments(await getMyDocuments().catch(() => existingDocuments))
-    }
     setSavedAt(new Date())
   }
 
@@ -265,11 +306,7 @@ export default function VendorRequestPage() {
     setSubmitting(true)
     setSubmitError('')
     try {
-      // Documents go up first: they are part of what the reviewer checks, so a failed upload must stop the submission.
-      if (Object.keys(documents).length > 0) {
-        await uploadVendorDocuments(profile.vendor_id, documents)
-        setDocuments({})
-      }
+      // Documents already went up when they were picked; a file that failed stays marked in its row until the vendor retries it.
       const confirmedKeys = [...confirmed].map((key) => (key.startsWith('doc:') ? `doc_${key.slice(4)}` : KEY_BY_FORM_FIELD[key])).filter(Boolean)
       await submitOnboarding(data, confirmedKeys)
       await refreshProfile()
@@ -306,8 +343,14 @@ export default function VendorRequestPage() {
           <BankDetails {...props} />
           <SupportingDocuments
             documents={documents}
-            onChange={setDocumentFiles}
+            onPick={pickDocuments}
+            onRemovePicked={removePicked}
+            onRetry={retryUpload}
+            uploadState={uploadState}
+            uploading={uploading}
             existing={existingDocuments}
+            onDeleteExisting={async (type, file) => setExistingDocuments(await deleteMyDocument(type, file.blob_name))}
+            onPreview={setPreviewId}
             flags={documentFlags}
             onConfirm={confirmDocument}
             onUnconfirm={unconfirmDocument}
@@ -320,12 +363,13 @@ export default function VendorRequestPage() {
         values={values}
         documents={documents}
         existingDocuments={existingDocuments}
+        onPreview={setPreviewId}
         register={register}
         setValue={setValue}
         errors={errors}
         onEdit={(target) => setStep(target)}
         onBack={previousStep}
-        submitting={submitting}
+        submitting={submitting || uploading}
         declarationsComplete={declarationsComplete}
         isResubmission={returned}
         unresolvedCount={unresolvedCount}
@@ -415,7 +459,7 @@ export default function VendorRequestPage() {
                 {step !== 4 && (
                   <div className="z-20 mt-3 shrink-0 rounded-lg border border-slate-300 bg-slate-50 p-2">
                     <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
-                      <Button type="button" variant="secondary" className="px-6" onClick={saveDraft} disabled={saving}>
+                      <Button type="button" variant="secondary" className="px-6" onClick={saveDraft} disabled={saving || uploading}>
                         {saving ? <Loader /> : <Save size={17} />} Save draft
                       </Button>
                       <div className="flex flex-col-reverse gap-2 sm:flex-row">
@@ -423,7 +467,7 @@ export default function VendorRequestPage() {
                         <Button
                           type="button"
                           onClick={nextStep}
-                          disabled={saving || checkingDuplicates || checkingPan || panTaken || (step === 1 && identity.blocked)}
+                          disabled={saving || uploading || checkingDuplicates || checkingPan || panTaken || (step === 1 && identity.blocked)}
                         >
                           {saving || checkingDuplicates || checkingPan ? <><Loader /> {saving ? 'Saving...' : 'Checking...'}</> : <>{step === 3 ? 'Review request' : 'Continue'} <ArrowRight size={17} /></>}
                         </Button>
@@ -447,6 +491,7 @@ export default function VendorRequestPage() {
           confirmLabel="Save and log out"
           confirmVariant="primary"
         />
+        <DocumentPreview items={previewItems} activeId={previewId} onChange={setPreviewId} onClose={() => setPreviewId(null)} />
       </AppShell>
     </FlagsContext.Provider>
   )

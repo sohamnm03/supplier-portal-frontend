@@ -40,7 +40,7 @@ export default function AgreementSigningPage() {
   const [declineOpen, setDeclineOpen] = useState(false)
   const [declined, setDeclined] = useState(false)
   const [reviewing, setReviewing] = useState(false) // the final review of the signed agreement, before the vendor confirms
-  const [changeSent, setChangeSent] = useState(false) // "Something is wrong" at the details review: sent as a change request
+  const [changeSent, setChangeSent] = useState(false) // "Request changes" at the details review: sent as a change request
   const [moving, setMoving] = useState(false)
   const [refreshError, setRefreshError] = useState('')
 
@@ -212,15 +212,20 @@ export default function AgreementSigningPage() {
                 </div>
 
                 {step === 1 && (
-                  <footer className="mt-2 flex flex-col gap-2 border-t border-slate-100 pt-3 sm:flex-row sm:items-center">
-                    <label className="flex cursor-pointer items-center gap-2.5 rounded-lg border border-[#dce6f1] bg-[#f7fafd] px-3 py-2 transition hover:border-slate-300 sm:flex-1">
-                      <input type="checkbox" className="size-4.5 shrink-0 accent-brand-600" checked={detailsOk} onChange={(event) => setDetailsOk(event.target.checked)} />
-                      <span className="text-[13px] font-semibold leading-5 text-navy-900">These details are correct</span>
-                    </label>
-                    <div className="flex items-center justify-end gap-2">
-                      <Button variant="secondary" className={SMALL_BUTTON} onClick={() => setDeclineOpen(true)}><MessageSquareWarning size={15} /> Something is wrong</Button>
+                  <footer className="mt-2 border-t border-slate-100 pt-3">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                      <label className="flex cursor-pointer items-center gap-2.5 rounded-lg border border-[#dce6f1] bg-[#f7fafd] px-3 py-2 transition hover:border-slate-300 sm:flex-1">
+                        <input type="checkbox" className="size-4.5 shrink-0 accent-brand-600" checked={detailsOk} onChange={(event) => setDetailsOk(event.target.checked)} />
+                        <span className="text-[13px] font-semibold leading-5 text-navy-900">These details are correct</span>
+                      </label>
                       <Button className={SMALL_BUTTON} onClick={() => setStep(2)} disabled={!detailsOk}>Continue</Button>
                     </div>
+                    <p className="mt-2.5 flex flex-wrap items-center gap-x-1.5 px-1 text-[11.5px] leading-5 text-slate-500">
+                      Is any of your information incorrect? Tell us what needs to be corrected.
+                      <button type="button" onClick={() => setDeclineOpen(true)} className="inline-flex items-center gap-1 rounded-md px-1 text-[11.5px]! font-bold! text-amber-700 underline-offset-2 transition hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/30">
+                        <MessageSquareWarning size={13} aria-hidden="true" /> Request changes
+                      </button>
+                    </p>
                   </footer>
                 )}
               </>
@@ -237,7 +242,7 @@ export default function AgreementSigningPage() {
       <DeclineDialog
         open={declineOpen && (step !== 1 || renewal)}
         agreementId={agreement.agreement_id}
-        title={step === 1 ? 'Something is wrong' : 'I cannot sign this'}
+        title={step === 1 ? 'Request changes' : 'I cannot sign this'}
         description={renewal ? 'Tell us what needs to change. Our team will review it and may send you a corrected agreement. Your current agreement stays in force.' : undefined}
         atStep={step === 1 ? 'review' : 'sign'}
         onClose={() => setDeclineOpen(false)}

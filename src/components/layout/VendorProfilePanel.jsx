@@ -3,6 +3,7 @@ import { Clock, FileText, Pencil, PencilLine, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { getMyDocuments, getUpdateRequests, getVendorProfile, UPDATE_REQUESTS_CHANGED_EVENT } from '../../api/vendorApi'
 import Button from '../common/Button'
+import useAgreementHold, { HOLD_TOOLTIP } from '../../hooks/useAgreementHold'
 import Loader from '../common/Loader'
 import EditDetailsModal from './EditDetailsModal'
 import { displayProfileValue, isRegisteredMsme, sections } from './profileFields'
@@ -17,9 +18,10 @@ const wideKeys = new Set(['vendor_legal_name', 'street', 'account_holder_name'])
 // The vendor's profile, read-only. "Edit details" opens a popup (EditDetailsModal) that shows the
 // current details beside an editable copy; the change is then sent for approval rather than applied.
 // With `readOnly` (the application is still under review) it is a copy of what was submitted: no editing and no update
-// requests, but the documents on file are listed and there is a shortcut to ask for changes.
+// requests, but the uploaded documents are listed and there is a shortcut to ask for changes.
 export default function VendorProfilePanel({ open, onClose, profile, onProfileRefresh, readOnly = false }) {
   const [editOpen, setEditOpen] = useState(false)
+  const { onHold } = useAgreementHold()
   const [openRequest, setOpenRequest] = useState(null)
   const [sentNotice, setSentNotice] = useState(false)
   const [documents, setDocuments] = useState(null)
@@ -183,7 +185,7 @@ export default function VendorProfilePanel({ open, onClose, profile, onProfileRe
                     </>
                   ) : null
                 ) : (
-                <Button className="min-h-9! px-4! py-1.5!" type="button" onClick={() => setEditOpen(true)} disabled={pending} title={pending ? 'An update request is already awaiting approval' : undefined}>
+                <Button className="min-h-9! px-4! py-1.5!" type="button" onClick={() => setEditOpen(true)} disabled={pending || onHold} title={onHold ? HOLD_TOOLTIP : pending ? 'An update request is already awaiting approval' : undefined}>
                   <Pencil size={16} /> Edit details
                 </Button>
                 )}

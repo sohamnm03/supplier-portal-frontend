@@ -21,6 +21,9 @@ import {
 import { getInvoiceReturnReasons, replaceInvoice } from '../../api/vendorApi'
 import { statusDetails } from '../../utils/invoiceStatus'
 import ReplaceInvoiceModal from './ReplaceInvoiceModal'
+import useAgreementHold, { HOLD_TOOLTIP } from '../../hooks/useAgreementHold'
+import useInvoiceVersions from '../../hooks/useInvoiceVersions'
+import { VersionHeaderActions, VersionLabel, VersionPill } from './InvoiceVersionBar'
 import InvoicePagination from './InvoicePagination'
 import { CompareOverlay, loadInvoicePdfUrl, pdfSrc } from './InvoiceCompare'
 import { pick, display, numberValue, amount, dateValue, invoiceNumber, vendorName, vendorGstin, vendorGstinVerified, totalValue, FlaggedContext, tabOfField } from './invoiceFields'
@@ -36,10 +39,14 @@ const BTN_XS_BOLD = { fontSize: '0.75rem', lineHeight: '1rem', fontWeight: 600 }
 const BTN_11_SEMI = { fontSize: '0.6875rem', lineHeight: '1rem', fontWeight: 600 }
 
 
-// Newest uploads first; fall back to the (numeric) id when timestamps are equal or missing.
+// Most recently uploaded or actioned (returned, replaced, status changed) first; then the newest upload, then the (numeric) id when timestamps
+// are equal or missing.
+const timeOf = (value) => new Date(value).getTime() || 0
 const byNewestUpload = (a, b) => {
-  const timeDiff = (new Date(b.uploadedAt).getTime() || 0) - (new Date(a.uploadedAt).getTime() || 0)
-  if (timeDiff) return timeDiff
+  const activityDiff = timeOf(b.activityAt ?? b.uploadedAt) - timeOf(a.activityAt ?? a.uploadedAt)
+  if (activityDiff) return activityDiff
+  const uploadDiff = timeOf(b.uploadedAt) - timeOf(a.uploadedAt)
+  if (uploadDiff) return uploadDiff
   return (Number(b.id) || 0) - (Number(a.id) || 0)
 }
 
@@ -75,7 +82,9 @@ function matchesAdvanced(invoice, { dateFrom, dateTo, minAmount, maxAmount }) {
   return true
 }
 
-export default function InvoiceList({ invoices, onRemove, onExtract, isLoading = false, error = '', uploadedBy = '', uploadSignal = 0, onReplaced = async () => [] }) {
+export default function InvoiceList({ invoices, isLoading = false, error = '', uploadedBy = '', uploadSignal = 0, onReplaced = async () => [] }) {
+  // While the vendor's agreement has expired the server refuses replacements, so the control says so instead of looking broken.
+  const { onHold } = useAgreementHold()
   const [replacing, setReplacing] = useState(null)
   // The invoice whose vendor details are open (from the vendor name in the table).
   const [vendorInfo, setVendorInfo] = useState(null)
@@ -360,14 +369,19 @@ export default function InvoiceList({ invoices, onRemove, onExtract, isLoading =
                         <td className="whitespace-nowrap px-4 py-3 text-xs text-[#102a4c]">{dateValue(pick(invoice, ['due_date']))}</td>
                         <td className="px-4 py-3 text-xs text-[#102a4c]">{display(pick(invoice, ['payment_term', 'payment_terms']))}</td>
                         <td className="whitespace-nowrap px-4 py-3 text-right text-xs font-extrabold text-[#102a4c]">{amount(totalValue(invoice), pick(invoice, ['currency'], 'INR'))}</td>
-                        <td className="px-4 py-3"><span className={`inline-flex rounded-md px-2.5 py-1 text-[10px] font-bold ${status.tone}`}>•&nbsp; {status.label}</span></td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex rounded-md px-2.5 py-1 text-[10px] font-bold ${status.tone}`}>•&nbsp; {status.label}</span>
+                          {Number(invoice.submission_round) > 0 && (
+                            <span title={`Replaced ${invoice.submission_round} ${Number(invoice.submission_round) === 1 ? 'time' : 'times'}. Open the invoice to see the earlier versions.`} className="ml-1.5 inline-flex rounded-md border border-[#b9d3ef] bg-[#eef6ff] px-1.5 py-0.5 text-[10px] font-bold text-[#1265c8]">v{Number(invoice.submission_round) + 1}</span>
+                          )}
+                        </td>
                         <td className="px-5 py-3">
                           <div className="flex items-center justify-center gap-1.5">
                             {/* The same actions on every row of a tab, in the same places; Replace is greyed out unless the invoice needs correction. */}
                             <ActionButton title={canPreview ? 'View invoice' : 'Preview unavailable'} disabled={!canPreview} onClick={() => openPreview(invoice)}><Eye size={15} /></ActionButton>
                             {/* Replace only appears where an invoice can need correcting: All Status and Needs correction. */}
                             {(filter === 'all' || filter === 'correction') && (
-                              <ActionButton title={invoice.status === 'Returned to Vendor' ? 'Correct and replace invoice' : 'Replace invoice (only when it needs correction)'} disabled={invoice.status !== 'Returned to Vendor'} onClick={() => setReplacing(invoice)}><Upload size={14} /></ActionButton>
+                              <ActionButton title={onHold ? HOLD_TOOLTIP : invoice.status === 'Returned to Vendor' ? 'Correct and replace invoice' : 'Replace invoice (only when it needs correction)'} disabled={onHold || invoice.status !== 'Returned to Vendor'} onClick={() => setReplacing(invoice)}><Upload size={14} /></ActionButton>
                             )}
                           </div>
                         </td>
@@ -446,8 +460,11 @@ function EmptyState({ title, detail }) {
   )
 }
 
+const NO_FLAGS = new Set()
+
 function InvoiceDetailModal({ preview, onClose, onReplace, replaceBusy = false, replaceError = '', clearReplaceError = () => {}, replaceDone = false, onViewReplaced = () => {}, onFinishReplace = () => {} }) {
   const replaceInput = useRef(null)
+  const { onHold } = useAgreementHold()
   // The corrected file the user has picked but not yet confirmed.
   const [staged, setStaged] = useState(null)
   const [compareOpen, setCompareOpen] = useState(false)
@@ -489,13 +506,17 @@ function InvoiceDetailModal({ preview, onClose, onReplace, replaceBusy = false, 
     return () => document.removeEventListener('keydown', onKey)
   }, [previewInvoiceId, onClose])
 
-  const previewUrl = preview?.url
+  // An invoice that was replaced keeps its earlier versions: a bar of chips lets the vendor look at any of them, read-only.
+  const versions = useInvoiceVersions(preview?.invoice)
+  const viewing = versions.selected != null
+  const previewUrl = viewing ? versions.view.url : preview?.url
   useEffect(() => setFrameLoaded(false), [previewUrl])
 
   if (!preview) return null
-  const { invoice, loading, url, error } = preview
-  const status = statusDetails(invoice)
-  const canReplaceHere = invoice.status === 'Returned to Vendor' && returnInfo?.outcome !== 'rejected'
+  const { invoice, loading, url, error } = viewing ? versions.view : preview
+  const shown = invoice || preview.invoice
+  const status = statusDetails(shown)
+  const canReplaceHere = !viewing && preview.invoice.status === 'Returned to Vendor' && returnInfo?.outcome !== 'rejected'
 
   return createPortal(
     <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-950/50 p-2 sm:p-4" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
@@ -505,13 +526,14 @@ function InvoiceDetailModal({ preview, onClose, onReplace, replaceBusy = false, 
             <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-[#e6f1ff] text-[#3a73b8]"><FileText size={18} /></span>
             <div className="min-w-0">
               <h2 id="invoice-detail-title" className="text-[17px] font-bold text-[#102a4c]">Invoice Detail</h2>
-              <div className="mt-1 flex items-center gap-2 text-xs text-[#59728f]"><span>{display(invoiceNumber(invoice))}</span><span>•</span><span className={`rounded px-2 py-0.5 font-bold ${status.tone}`}>{status.label}</span></div>
+              <div className="mt-1 flex items-center gap-2 text-xs text-[#59728f]"><span>{display(invoiceNumber(shown))}</span><span>•</span>{viewing ? <VersionLabel versions={versions} /> : <span className={`rounded px-2 py-0.5 font-bold ${status.tone}`}>{status.label}</span>}<VersionPill versions={versions} /></div>
             </div>
           </div>
+          {viewing && <VersionHeaderActions versions={versions} />}
           <button type="button" onClick={onClose} aria-label="Close invoice detail" className="grid size-8 place-items-center rounded-full bg-white/80 text-[#5f7895] transition hover:bg-white hover:text-[#102a4c]"><X size={18} /></button>
         </header>
 
-        {returnInfo && (returnInfo.items?.length > 0 || returnInfo.overall_remark) && (() => {
+        {!viewing && returnInfo && (returnInfo.items?.length > 0 || returnInfo.overall_remark) && (() => {
           const rejected = returnInfo.outcome === 'rejected'
           const pending = (returnInfo.items ?? []).filter((item) => !item.fixed)
           return (
@@ -537,8 +559,10 @@ function InvoiceDetailModal({ preview, onClose, onReplace, replaceBusy = false, 
               {[['overview', 'Overview'], ['amounts', 'Amounts & Line Items']].map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={activeTab === value} onClick={() => setActiveTab(value)} className={`-mb-px border-b-2 py-3 transition ${activeTab === value ? 'border-[#1769e8] text-[#1769e8]' : 'border-transparent text-[#58728e] hover:text-[#1769e8]'}`}><span className={activeTab === value ? 'font-bold' : 'font-medium'}>{label}</span>{[...flaggedFields].some((field) => tabOfField(field) === value) && <span role="img" aria-label="Needs correction" title="Needs correction" className="ml-1.5 inline-block size-[7px] rounded-full bg-red-500 align-middle" />}</button>)}
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
-              <FlaggedContext.Provider value={flaggedFields}>
-                {activeTab === 'overview' ? <Overview invoice={invoice} /> : <Amounts invoice={invoice} />}
+              <FlaggedContext.Provider value={viewing ? NO_FLAGS : flaggedFields}>
+                {viewing && loading ? <PreviewMessage icon={<LoaderCircle size={28} className="animate-spin text-[#1769e8]" />} title="Loading this version..." detail="Fetching the earlier details." />
+                  : viewing && !shown ? <PreviewMessage icon={<AlertCircle className="text-red-500" />} title="Version unavailable" detail={error} />
+                    : activeTab === 'overview' ? <Overview invoice={shown} /> : <Amounts invoice={shown} />}
               </FlaggedContext.Provider>
             </div>
           </div>
@@ -547,7 +571,7 @@ function InvoiceDetailModal({ preview, onClose, onReplace, replaceBusy = false, 
             <div className="flex shrink-0 items-start justify-between gap-3 px-5 pb-3 pt-4">
               <div className="min-w-0">
                 <p className="text-[11px] font-bold uppercase tracking-[0.05em] text-[#526d89]">Original Document</p>
-                <p className="mt-1 break-words text-xs text-[#59728f]">File: {invoice.name}</p>
+                <p className="mt-1 break-words text-xs text-[#59728f]">File: {shown.name}</p>
               </div>
               {url && !loading && !error && (
                 <a href={url} target="_blank" rel="noopener noreferrer" title="Open in new tab" aria-label="Open in new tab" className="grid size-8 shrink-0 place-items-center rounded-md border border-[#b9d3ef] bg-white text-[#1769e8] transition hover:bg-[#eaf3ff]">
@@ -560,7 +584,7 @@ function InvoiceDetailModal({ preview, onClose, onReplace, replaceBusy = false, 
                 : error ? <PreviewMessage icon={<AlertCircle className="text-red-500" />} title="Preview unavailable" detail={error} />
                   : (
                     <>
-                      <iframe src={pdfSrc(url)} title={`Preview of ${invoice.name}`} onLoad={() => setFrameLoaded(true)} className="h-full min-h-[400px] w-full border-0 bg-white" />
+                      <iframe src={pdfSrc(url)} title={`Preview of ${shown.name}`} onLoad={() => setFrameLoaded(true)} className="h-full min-h-[400px] w-full border-0 bg-white" />
                       {!frameLoaded && <div className="absolute inset-0 bg-white"><PreviewMessage icon={<LoaderCircle size={28} className="animate-spin text-[#1769e8]" />} title="Loading preview..." detail="Rendering the document, this may take a moment." /></div>}
                     </>
                   )}
@@ -576,7 +600,7 @@ function InvoiceDetailModal({ preview, onClose, onReplace, replaceBusy = false, 
                   <span className="grid size-9 shrink-0 place-items-center rounded-md bg-[#e6f1ff] text-[#3a73b8]"><FileText size={17} /></span>
                   <div className="min-w-0">
                     <button type="button" title="Open the new file in a new tab" onClick={() => window.open(URL.createObjectURL(staged), '_blank', 'noopener')} className="block max-w-full truncate text-left text-xs font-semibold text-[#1265c8] hover:underline" style={BTN_XS_BOLD}>{staged.name}</button>
-                    <p className="mt-0.5 text-[11px] text-[#59728f]">{staged.size >= 1048576 ? `${(staged.size / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(staged.size / 1024))} KB`} · Overwriting will replace this invoice's details with the new file.</p>
+                    <p className="mt-0.5 text-[11px] text-[#59728f]">{staged.size >= 1048576 ? `${(staged.size / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(staged.size / 1024))} KB`} · Overwriting will replace this invoice&apos;s details with the new file.</p>
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
@@ -592,13 +616,13 @@ function InvoiceDetailModal({ preview, onClose, onReplace, replaceBusy = false, 
                   <p className="font-bold text-[#29466a]">Fixed what was asked? Upload the corrected invoice.</p>
                   <p className="mt-0.5 text-[11px] text-[#59728f]">You can check the file before it replaces this invoice. PDF, PNG or JPG up to 10 MB.</p>
                 </div>
-                <button type="button" onClick={() => { clearReplaceError(); setStageError(''); replaceInput.current?.click() }} className="inline-flex h-8 shrink-0 items-center gap-2 rounded-md bg-[#1265c8] px-3.5 text-xs font-semibold text-white transition hover:bg-[#0f56ab]" style={BTN_XS_BOLD}><Upload size={14} /> Choose new invoice</button>
+                <button type="button" disabled={onHold} title={onHold ? HOLD_TOOLTIP : undefined} onClick={() => { clearReplaceError(); setStageError(''); replaceInput.current?.click() }} className="inline-flex h-8 shrink-0 items-center gap-2 rounded-md bg-[#1265c8] px-3.5 text-xs font-semibold text-white transition hover:bg-[#0f56ab] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-[#1265c8]" style={BTN_XS_BOLD}><Upload size={14} /> Choose new invoice</button>
               </>
             )}
             {(replaceError || stageError) && <p className="w-full text-xs font-semibold text-red-600">{replaceError || stageError}</p>}
           </footer>
         )}
-        {compareOpen && staged && <CompareOverlay invoice={invoice} currentUrl={url} loading={loading} file={staged} invoiceNumber={display(invoiceNumber(invoice))} onClose={() => setCompareOpen(false)} onOverwrite={() => { setCompareOpen(false); onReplace(preview.invoice, staged) }} />}
+        {compareOpen && staged && <CompareOverlay invoice={preview.invoice} currentUrl={url} loading={loading} file={staged} invoiceNumber={display(invoiceNumber(preview.invoice))} onClose={() => setCompareOpen(false)} onOverwrite={() => { setCompareOpen(false); onReplace(preview.invoice, staged) }} />}
         {replaceBusy && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-white/85 backdrop-blur-[1px]" role="status" aria-live="polite">
             <LoaderCircle size={34} className="animate-spin text-[#1769e8]" />
@@ -610,7 +634,7 @@ function InvoiceDetailModal({ preview, onClose, onReplace, replaceBusy = false, 
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-white px-6 text-center" role="status" aria-live="polite">
             <span className="grid size-14 place-items-center rounded-full bg-emerald-50 text-emerald-600"><CheckCircle2 size={34} /></span>
             <p className="text-base font-bold text-[#102a4c]">Invoice replaced successfully</p>
-            <p className="max-w-sm text-xs leading-5 text-[#59728f]">We have read your new file and updated this invoice's details. It has been sent back for approval, so it no longer needs correction.</p>
+            <p className="max-w-sm text-xs leading-5 text-[#59728f]">We have read your new file and updated this invoice&apos;s details. It has been sent back for approval, so it no longer needs correction.</p>
             <div className="mt-2 flex items-center gap-2.5">
               <button type="button" onClick={onViewReplaced} className="inline-flex h-8 items-center rounded-md border border-[#b9d3ef] bg-white px-3.5 text-xs font-semibold text-[#1265c8] transition hover:bg-[#eaf3ff]" style={BTN_XS_BOLD}>View updated invoice</button>
               <button type="button" onClick={onFinishReplace} className="inline-flex h-8 items-center rounded-md bg-[#1265c8] px-3.5 text-xs font-semibold text-white transition hover:bg-[#0f56ab]" style={BTN_XS_BOLD}>Done</button>

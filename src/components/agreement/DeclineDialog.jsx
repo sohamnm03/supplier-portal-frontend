@@ -9,7 +9,7 @@ const MIN = 3
 const MAX = 500
 
 // Asks the vendor why they cannot sign (3-500 characters) and sends it to our team.
-export default function DeclineDialog({ open, agreementId, title = 'Something is wrong', description = 'Tell us what needs to change. Our team will review it and send you a corrected agreement.', confirmLabel = 'Send to our team', atStep = 'sign', onClose, onDeclined }) {
+export default function DeclineDialog({ open, agreementId, title = 'Request changes', description = 'Tell us what needs to change. Our team will review it and send you a corrected agreement.', confirmLabel = 'Send to our team', atStep = 'sign', onClose, onDeclined }) {
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
