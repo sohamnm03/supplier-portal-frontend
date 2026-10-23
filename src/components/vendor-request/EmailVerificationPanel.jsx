@@ -10,7 +10,8 @@ const waitText = (seconds) => (seconds > 90 ? `${Math.ceil(seconds / 60)} min` :
 
 // Shown under the email field while a code is pending (or a verification just failed). The code can be typed here,
 // or the link in the email opened on any device: the status is polled, so this panel disappears either way.
-export default function EmailVerificationPanel({ email, verification }) {
+// The phone field reuses it: `message` replaces the "we sent a code to <email>" text and `Icon` the mail icon.
+export default function EmailVerificationPanel({ email, verification, message, Icon = MailCheck }) {
   const { pending, busy, error, attemptsRemaining, resendAt, send, submitCode } = verification
   const [code, setCode] = useState('')
   const [now, setNow] = useState(() => Date.now())
@@ -42,11 +43,13 @@ export default function EmailVerificationPanel({ email, verification }) {
       {pending && (
         <>
           <p className="flex items-start gap-2 text-xs leading-5 text-slate-700">
-            <MailCheck size={16} className="mt-0.5 shrink-0 text-brand-600" />
-            <span>
-              We sent a 6-digit code to <strong className="break-all text-navy-900">{email}</strong>. Enter it below, or open the link in that email.
-              It may take a minute and can land in spam.
-            </span>
+            <Icon size={16} className="mt-0.5 shrink-0 text-brand-600" />
+            {message ?? (
+              <span>
+                We sent a 6-digit code to <strong className="break-all text-navy-900">{email}</strong>. Enter it below, or open the link in that email.
+                It may take a minute and can land in spam.
+              </span>
+            )}
           </p>
           <div className="mt-2.5 flex items-center gap-2">
             <input

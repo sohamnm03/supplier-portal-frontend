@@ -199,11 +199,12 @@ export async function getVendorProfile() {
 }
 
 // Signup: a verified email and a phone number. The backend emails the login credentials.
-export async function signupVendor({ email, phone, verificationId }) {
+export async function signupVendor({ email, phone, verificationId, phoneVerificationId }) {
   const response = await fetch(`${API_BASE_URL}/vendors/signup`, jsonRequest('POST', {
     email: email.trim().toLowerCase(),
     contact_no: phone,
     verification_id: verificationId,
+    phone_verification_id: phoneVerificationId,
   }))
   const body = await response.json().catch(() => null)
 
@@ -446,12 +447,13 @@ export async function checkPanExists(pan) {
   return checkExists('check-pan', { pan: pan.trim().toUpperCase() }, 'Failed to verify PAN')
 }
 
-// Email verification goes through our backend, which relays to the shared service. Failures carry
-// `status`, `body` (the service's JSON) and, for a 429, `retryAfter` seconds.
-async function emailVerificationRequest(path, options, fallbackMessage) {
+// Email verification goes through our backend, which relays to the shared service; phone verification is run by
+// our backend itself (the code goes out over WhatsApp). Failures carry `status`, `body` (the JSON answer) and, for
+// a 429, `retryAfter` seconds.
+async function emailVerificationRequest(path, options, fallbackMessage, kind = 'email-verification') {
   let response
   try {
-    response = await fetch(`${API_BASE_URL}/vendors/email-verification${path}`, options)
+    response = await fetch(`${API_BASE_URL}/vendors/${kind}${path}`, options)
   } catch {
     throw new Error(fallbackMessage)
   }
@@ -479,6 +481,15 @@ export function verifyEmailOtp(verificationId, otp) {
 
 export function getEmailVerificationStatus(verificationId) {
   return emailVerificationRequest(`/${encodeURIComponent(verificationId)}/status`, undefined, 'Unable to check the verification status.')
+}
+
+// `phone` is the full number with its country code, e.g. "+919998832823".
+export function sendPhoneVerification(phone) {
+  return emailVerificationRequest('/send', jsonPost({ phone }), 'Unable to send the verification code. Please try again.', 'phone-verification')
+}
+
+export function verifyPhoneOtp(verificationId, otp) {
+  return emailVerificationRequest('/verify-otp', jsonPost({ verification_id: verificationId, otp }), 'Unable to verify the code. Please try again.', 'phone-verification')
 }
 
 // ---- Vendor agreement signing -------------------------------------------------------------------------------------

@@ -1,16 +1,17 @@
 import { useEffect, useState } from 'react'
-import { BadgeCheck, CheckCircle2, MailCheck, X } from 'lucide-react'
+import { BadgeCheck, CheckCircle2, MailCheck, MessageCircle, X } from 'lucide-react'
 import Button from '../common/Button'
 import Loader from '../common/Loader'
 import PhoneField from '../common/PhoneField'
 import EmailVerificationPanel from '../vendor-request/EmailVerificationPanel'
 import useEmailVerification from '../../hooks/useEmailVerification'
+import usePhoneVerification from '../../hooks/usePhoneVerification'
 import { checkEmailExists, signupVendor } from '../../api/vendorApi'
 import { DEFAULT_COUNTRY_CODE, isValidPhone, joinPhone, phoneRuleFor } from '../../data/countryCodes'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
-// "Start vendor application": the vendor gives only their contact details (a verified email and a phone number).
+// "Start vendor application": the vendor gives only their contact details (a verified email and a verified phone number).
 // The account is created and the login details are emailed; the rest of the application is filled in after signing in.
 export default function SignupModal({ open, onClose, onSignedUp, initialEmail = '' }) {
   const [email, setEmail] = useState('')
@@ -22,6 +23,9 @@ export default function SignupModal({ open, onClose, onSignedUp, initialEmail = 
   const [submitError, setSubmitError] = useState('')
   const [created, setCreated] = useState(false)
   const verification = useEmailVerification(email)
+  const phoneValid = isValidPhone(phoneCode, phone)
+  // Only a complete, valid number can be verified; while it is being edited the verification is dropped.
+  const phoneVerification = usePhoneVerification(phoneValid ? joinPhone(phoneCode, phone) : '')
 
   useEffect(() => {
     if (!open) return undefined
@@ -40,6 +44,7 @@ export default function SignupModal({ open, onClose, onSignedUp, initialEmail = 
     setSubmitError('')
     setCreated(false)
     verification.reset()
+    phoneVerification.reset()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
@@ -51,9 +56,9 @@ export default function SignupModal({ open, onClose, onSignedUp, initialEmail = 
   if (!open) return null
 
   const emailValid = EMAIL_PATTERN.test(email.trim())
-  const phoneValid = isValidPhone(phoneCode, phone)
   const canVerify = emailValid && !verification.verified && !verification.pending && !verification.busy && !checking
-  const canCreate = verification.verified && phoneValid && !submitting
+  const canVerifyPhone = phoneValid && !phoneVerification.verified && !phoneVerification.pending && !phoneVerification.busy
+  const canCreate = verification.verified && phoneVerification.verified && !submitting
 
   // The email must not already belong to an account: say so before a code is sent.
   const sendCode = async () => {
@@ -79,7 +84,12 @@ export default function SignupModal({ open, onClose, onSignedUp, initialEmail = 
     setSubmitting(true)
     setSubmitError('')
     try {
-      await signupVendor({ email, phone: joinPhone(phoneCode, phone), verificationId: verification.verificationId })
+      await signupVendor({
+        email,
+        phone: joinPhone(phoneCode, phone),
+        verificationId: verification.verificationId,
+        phoneVerificationId: phoneVerification.verificationId,
+      })
       setCreated(true)
     } catch (error) {
       if (error.code === 'email_exists') setEmailError(error.message)
@@ -139,7 +149,7 @@ export default function SignupModal({ open, onClose, onSignedUp, initialEmail = 
         ) : (
           <form onSubmit={createAccount} noValidate className="mt-3">
             <p className="text-[13px] leading-5 text-slate-600">
-              Verify your email and add a phone number. We’ll email you login details, then you can fill in the rest of your
+              Verify your email and WhatsApp phone number. We’ll email you login details, then you can fill in the rest of your
               application and save your progress as you go.
             </p>
 
@@ -187,19 +197,53 @@ export default function SignupModal({ open, onClose, onSignedUp, initialEmail = 
               <label htmlFor="signup-phone" className="mb-1 block text-[11px] font-bold uppercase tracking-[0.04em] text-navy-900">
                 Phone number<span className="ml-1 text-red-600" aria-hidden="true">*</span>
               </label>
-              <PhoneField
-                id="signup-phone"
-                codeId="signup-phone-code"
-                code={phoneCode}
-                onCodeChange={(code) => { setPhoneCode(code); setPhone((current) => current.slice(0, phoneRuleFor(code).max)) }}
-                inputProps={{ value: phone, onChange: (event) => setPhone(event.target.value), name: 'signupPhone' }}
-                onNumberReplace={setPhone}
-                invalid={Boolean(phone) && !phoneValid}
-                required
-              />
+              <div className="flex items-center gap-2">
+                <div className="min-w-0 flex-1">
+                  <PhoneField
+                    id="signup-phone"
+                    codeId="signup-phone-code"
+                    code={phoneCode}
+                    onCodeChange={(code) => { setPhoneCode(code); setPhone((current) => current.slice(0, phoneRuleFor(code).max)) }}
+                    inputProps={{ value: phone, onChange: (event) => setPhone(event.target.value), name: 'signupPhone' }}
+                    onNumberReplace={setPhone}
+                    invalid={Boolean(phone) && !phoneValid}
+                    required
+                  />
+                </div>
+                {phoneVerification.verified ? (
+                  <span className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-bold text-emerald-700">
+                    <BadgeCheck size={14} /> Verified
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={phoneVerification.send}
+                    disabled={!canVerifyPhone}
+                    className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg border border-brand-100 bg-brand-50 px-3 text-xs font-bold text-brand-700 transition hover:border-brand-500 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {phoneVerification.busy && !phoneVerification.pending ? <Loader /> : <MessageCircle size={14} />} Verify
+                  </button>
+                )}
+              </div>
               <p className="mt-1 text-[11px] leading-4 text-slate-500">
-                {phone && !phoneValid ? phoneRuleFor(phoneCode).message : phoneCode === '+91' ? '10-digit mobile number' : 'Number without the country code'}
+                {phone && !phoneValid
+                  ? phoneRuleFor(phoneCode).message
+                  : phoneVerification.verified
+                    ? 'Phone number verified.'
+                    : `${phoneCode === '+91' ? '10-digit mobile number' : 'Number without the country code'}. We’ll send a 6-digit code on WhatsApp.`}
               </p>
+              <div className="mt-2 empty:hidden">
+                <EmailVerificationPanel
+                  verification={phoneVerification}
+                  Icon={MessageCircle}
+                  message={(
+                    <span>
+                      We sent a 6-digit code on WhatsApp to <strong className="text-navy-900">{joinPhone(phoneCode, phone)}</strong>. Enter it below.
+                      It may take a minute to arrive.
+                    </span>
+                  )}
+                />
+              </div>
             </div>
 
             {submitError && <p role="alert" className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-800">{submitError}</p>}
