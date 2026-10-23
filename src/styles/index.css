@@ -137,3 +137,9 @@ button:not(:disabled), a, select:not(:disabled), input[type="checkbox"]:not(:dis
   body { background: white; }
   .print-card { box-shadow: none; border-color: #cbd5e1; }
 }
+
+/* Every password-style field here has its own show/hide button; hide the browser's built-in one (Edge/Chromium) so there aren't two eyes. */
+input::-ms-reveal,
+input::-ms-clear {
+  display: none;
+}

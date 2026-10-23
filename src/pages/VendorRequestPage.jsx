@@ -27,6 +27,7 @@ import { STAGES } from '../utils/stages'
 import { isValidPhone } from '../data/countryCodes'
 import { isCompanyType } from '../data/vendorTypes'
 import { FlagsContext } from '../context/flags-context'
+import useAutosave from '../hooks/useAutosave'
 import { checkPanExists, deleteMyDocument, getMyDocuments, saveOnboardingDraft, submitOnboarding, uploadVendorDocuments } from '../api/vendorApi'
 
 const trustPoints = [
@@ -87,6 +88,13 @@ export default function VendorRequestPage() {
   const [confirmed, setConfirmed] = useState(() => new Set())
 
   const values = watch()
+  // Progress is also saved in the background a moment after the vendor stops typing. It pauses while a manual save or the submit runs.
+  const autosave = useAutosave({
+    value: values,
+    save: saveOnboardingDraft,
+    enabled: !saving && !submitting && !exitOpen,
+    onSaved: () => setSavedAt(new Date()),
+  })
   const identity = useIdentityVerification(values, returned ? initialValues : null, !returned)
   const contactReady = isValidPhone(values.vendorPhoneCode, values.vendorPhone)
 
@@ -235,7 +243,9 @@ export default function VendorRequestPage() {
 
   // Saves the form (and any newly picked documents) to the vendor's account. Throws on failure.
   const persist = async () => {
-    await saveOnboardingDraft(getValues())
+    const toSave = getValues()
+    await saveOnboardingDraft(toSave)
+    autosave.markSaved(toSave)
     setSavedAt(new Date())
   }
 
@@ -446,7 +456,11 @@ export default function VendorRequestPage() {
                   <h2 className="mt-1 text-xl font-extrabold tracking-[-0.03em] text-navy-950 sm:text-2xl">{heading}</h2>
                   <p className="mt-1 text-xs leading-5 text-slate-600">{FORM_STEPS[step - 1].longTitle} · Fields marked with an asterisk are required.</p>
                 </div>
-                {savedAt && (
+                {autosave.status === 'error' ? (
+                  <p className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-amber-700" role="status">
+                    Couldn&apos;t save your progress yet, trying again…
+                  </p>
+                ) : savedAt && (
                   <p className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700" role="status">
                     <Check size={13} /> Progress saved at {savedAt.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}
                   </p>

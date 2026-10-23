@@ -5,9 +5,10 @@ import Loader from '../common/Loader'
 import SignatureInput from './SignatureInput'
 import AgreementSummaryCard from './AgreementSummaryCard'
 import SignedPreviewPane from './SignedPreviewPane'
-import { sendAgreementCode, signAgreement, verifyAgreementCode } from '../../api/vendorApi'
+import { getAgreementCodeStatus, sendAgreementCode, signAgreement, verifyAgreementCode } from '../../api/vendorApi'
 import { SMALL_BUTTON, keyTermTiles } from './agreementUtils'
 
+const CODE_POLL_MS = 4000
 const label = 'mb-1 block text-[11px] font-bold uppercase tracking-[0.04em] text-navy-900'
 
 // One step of the vertical stepper: a numbered badge on a rail, a title with its helper, then the content.
@@ -53,6 +54,29 @@ export default function AgreementSignPanel({ agreement, vendorName = '', canSign
     const tick = setTimeout(() => setCountdown((value) => value - 1), 1000)
     return () => clearTimeout(tick)
   }, [countdown])
+
+  // The email carries the code and a link; opening the link confirms the address too (the shared service records it). While a code is
+  // pending, ask now and then - and when the tab is shown again - so the step completes by itself, whether the link was opened on this
+  // device or another. A missed check is simply asked again.
+  useEffect(() => {
+    if (!sentTo || verified || stale) return undefined
+    let ignore = false
+    const check = () => {
+      if (document.visibilityState !== 'visible') return
+      getAgreementCodeStatus(agreementId)
+        .then((result) => { if (!ignore && result?.verified) { setVerified(true); setCodeError('') } })
+        .catch(() => {})
+    }
+    const timer = setInterval(check, CODE_POLL_MS)
+    window.addEventListener('focus', check)
+    document.addEventListener('visibilitychange', check)
+    return () => {
+      ignore = true
+      clearInterval(timer)
+      window.removeEventListener('focus', check)
+      document.removeEventListener('visibilitychange', check)
+    }
+  }, [sentTo, verified, stale, agreementId])
 
   const sendCode = async () => {
     setSending(true)
@@ -151,7 +175,7 @@ export default function AgreementSignPanel({ agreement, vendorName = '', canSign
         )}
         <div className="ml-auto flex items-center gap-3">
           {complete ? (
-            <p className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs font-bold text-emerald-700" role="status"><CheckCircle2 size={15} /> Ready to sign</p>
+            <p className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs font-bold text-emerald-700" role="status"><CheckCircle2 size={15} /> {doneCount} of {checks.length} completed</p>
           ) : (
             <p className="hidden whitespace-nowrap text-xs font-semibold text-slate-500 sm:block" title={!canSign ? blockedNote : `Still needed: ${missing.join(', ')}`}>{doneCount} of {checks.length} completed</p>
           )}
@@ -186,7 +210,7 @@ export default function AgreementSignPanel({ agreement, vendorName = '', canSign
             </div>
           </Section>
 
-          <Section number="2" title="Verify your email" helper="We email a 6-digit code to your registered email. It is valid for 10 minutes.">
+          <Section number="2" title="Verify your email" helper="We email a 6-digit code to your registered email. Enter it here, or just open the link in that email. It is valid for 10 minutes.">
             {verified ? (
               <p className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[13px] font-bold text-emerald-700" role="status"><Check size={15} /> Email verified</p>
             ) : (
@@ -246,7 +270,7 @@ export default function AgreementSignPanel({ agreement, vendorName = '', canSign
           <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1 [scrollbar-width:thin]">
             <section className="rounded-xl border border-blue-200 bg-[#eef7ff] px-3.5 py-3">
               <p className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.06em] text-brand-700"><CheckCircle2 size={14} /> One last check</p>
-              <p className="mt-1 text-xs leading-5 text-slate-600">This is exactly what will be signed. Nothing is signed until you press <b className="text-navy-900">Confirm and sign</b>.</p>
+              <p className="mt-1 text-xs leading-5 text-slate-600">This is exactly what will be signed. Nothing is signed until you press <b className="text-navy-900">Confirm agreement</b>.</p>
             </section>
 
             <section className="rounded-xl border border-[#dce6f1] bg-white" aria-label="Your signing details">
@@ -300,7 +324,7 @@ export default function AgreementSignPanel({ agreement, vendorName = '', canSign
             <Button variant="secondary" className={`${SMALL_BUTTON} whitespace-nowrap`} onClick={() => { setSignError(''); setReviewing(false) }} disabled={signing}><ArrowLeft size={15} /> Back to edit</Button>
             <div className="ml-auto">
               <Button className={`${SMALL_BUTTON} shrink-0`} onClick={sign} disabled={signing} aria-busy={signing}>
-                {signing ? <><Loader /> Signing…</> : <><PenLine size={15} /> Confirm and sign</>}
+                {signing ? <><Loader /> Confirming…</> : <><CheckCircle2 size={15} /> Confirm agreement</>}
               </Button>
             </div>
           </div>

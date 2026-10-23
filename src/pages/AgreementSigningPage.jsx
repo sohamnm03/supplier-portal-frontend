@@ -242,7 +242,7 @@ export default function AgreementSigningPage() {
       <DeclineDialog
         open={declineOpen && (step !== 1 || renewal)}
         agreementId={agreement.agreement_id}
-        title={step === 1 ? 'Request changes' : 'I cannot sign this'}
+        title={step === 1 ? 'Request changes' : 'Decline agreement'}
         description={renewal ? 'Tell us what needs to change. Our team will review it and may send you a corrected agreement. Your current agreement stays in force.' : undefined}
         atStep={step === 1 ? 'review' : 'sign'}
         onClose={() => setDeclineOpen(false)}

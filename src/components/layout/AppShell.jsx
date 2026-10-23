@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { ArrowLeft, ChevronRight, FileCheck2, FilePenLine, FileText, Home, LogOut } from 'lucide-react'
+import { ArrowLeft, ChevronRight, Handshake, Home, LogOut, ReceiptText, Replace } from 'lucide-react'
 import AppLogo from '../common/AppLogo'
 import useAuth from '../../hooks/useAuth'
 import VendorProfilePanel from './VendorProfilePanel'
@@ -9,9 +9,9 @@ import { OPEN_PROFILE_EVENT } from '../../utils/events'
 import { STAGES, WAITING_STAGES, homeForStage } from '../../utils/stages'
 
 const NAV_ITEMS = [
-  { to: '/invoices', label: 'Invoices', icon: FileText },
-  { to: '/update-requests', label: 'Change Requests', icon: FilePenLine },
-  { to: '/agreements', label: 'Agreement', icon: FileCheck2 },
+  { to: '/invoices', label: 'Invoices', icon: ReceiptText },
+  { to: '/agreements', label: 'Agreement', icon: Handshake },
+  { to: '/update-requests', label: 'Change Requests', icon: Replace },
 ]
 
 export default function AppShell({ breadcrumb, children, backTo, onBack }) {

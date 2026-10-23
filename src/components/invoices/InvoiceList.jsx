@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom'
 import {
   AlertCircle,
   ExternalLink,
-  Building2,
   CheckCircle2,
   Columns2,
   Eye,
@@ -19,15 +18,18 @@ import {
   X,
 } from 'lucide-react'
 import { getInvoiceReturnReasons, replaceInvoice } from '../../api/vendorApi'
+import useAuth from '../../hooks/useAuth'
+import { displayProfileValue } from '../layout/profileFields'
 import { statusDetails } from '../../utils/invoiceStatus'
 import ReplaceInvoiceModal from './ReplaceInvoiceModal'
+import VendorDocumentsTab from './VendorDocumentsTab'
 import useAgreementHold, { HOLD_TOOLTIP } from '../../hooks/useAgreementHold'
 import useInvoiceVersions from '../../hooks/useInvoiceVersions'
 import { VersionHeaderActions, VersionLabel, VersionPill } from './InvoiceVersionBar'
 import InvoicePagination from './InvoicePagination'
 import { CompareOverlay, loadInvoicePdfUrl, pdfSrc } from './InvoiceCompare'
 import { pick, display, numberValue, amount, dateValue, invoiceNumber, vendorName, vendorGstin, vendorGstinVerified, totalValue, FlaggedContext, tabOfField } from './invoiceFields'
-import { DetailSection, Field, Overview, Amounts } from './invoiceDetailViews'
+import { DetailSection, Overview, Amounts } from './invoiceDetailViews'
 import SortableHeaderCell from '../../utils/SortableHeaderCell'
 import { nextSortState, sortRows } from '../../utils/tableSort'
 
@@ -652,39 +654,89 @@ function PreviewMessage({ icon, title, detail }) {
   return <div className="flex h-full min-h-[260px] flex-col items-center justify-center gap-2 px-6 text-center text-[#66809e]">{icon}<p className="text-xs font-semibold text-[#1265c8]">{title}</p><p className="max-w-xs text-[11px]">{detail}</p></div>
 }
 
-// The vendor of an invoice, as read from the invoice and checked against the GST records.
+// The vendor record behind an invoice, laid out like the vendor details popup in the enterprise app: avatar and chips in the header,
+// then Overview / Compliance & Banking / Address & System tabs. Details come from the vendor's own profile; the name and GSTIN fall back
+// to what was read from the invoice, with the GST check result shown alongside.
+const VENDOR_TABS = [
+  { label: 'Overview', sections: [
+    { title: 'Identity & Classification', keys: [['name', 'Name'], ['vendor_legal_name', 'Vendor Legal Name'], ['vendor_type', 'Vendor Type'], ['status', 'Status']] },
+    { title: 'Contact', keys: [['email', 'Email'], ['contact_no', 'Contact No']] },
+  ] },
+  { label: 'Compliance & Banking', sections: [
+    { title: 'Registration & Compliance', keys: [['pan', 'PAN'], ['gstin', 'GSTIN'], ['gst_status', 'GST Status'], ['cin', 'CIN'], ['registration_number', 'Registration Number'], ['udyam_number', 'Udyam Number'], ['msme_status', 'MSME Status'], ['aadhaar_no', 'Aadhaar No']] },
+    { title: 'Banking Details', keys: [['account_holder_name', 'Account Holder Name'], ['bank_name', 'Bank Name'], ['branch_name', 'Branch Name'], ['bank_account_no', 'Bank Account No'], ['ifsc_code', 'IFSC Code'], ['currency', 'Currency']] },
+  ] },
+  { label: 'Address & System', sections: [
+    { title: 'Address', keys: [['street', 'Street'], ['city', 'City'], ['district', 'District'], ['region', 'State'], ['postal_code', 'Postal Code']] },
+    { title: 'System & Audit', keys: [['sap_vendor', 'SAP Vendor'], ['year_established', 'Year Established'], ['created_at', 'Created At'], ['updated_at', 'Updated At']] },
+  ] },
+  { label: 'Supporting Documents', documents: true },
+]
+const WIDE_VENDOR_KEYS = new Set(['street'])
+const HEADER_CHIP = 'hidden rounded-md border border-[#d5e2f1] bg-[#f7faff] px-2.5 py-1 text-[11px] font-medium text-[#4a6585] sm:inline'
+
 function VendorInfoModal({ invoice, onClose }) {
+  const { profile } = useAuth()
+  const [activeTab, setActiveTab] = useState(0)
   useEffect(() => {
     const onKey = (event) => { if (event.key === 'Escape') onClose() }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [onClose])
+
   const verified = vendorGstinVerified(invoice)
   const gstStatus = pick(invoice, ['vendor_gstin_status'])
+  const name = profile?.vendor_legal_name || vendorName(invoice)
+  const initials = String(name || '?').split(/\s+/).filter(Boolean).slice(0, 2).map((word) => word[0]).join('').toUpperCase() || '?'
+  const status = profile?.status
+
+  const valueOf = (key) => {
+    if (key === 'gst_status') return verified ? `Verified${gstStatus ? ` · ${gstStatus}` : ''}` : (gstStatus || 'Not verified')
+    if (key === 'gstin') return profile?.gstin || vendorGstin(invoice)
+    if (key === 'created_at' || key === 'updated_at') {
+      const date = profile?.[key] ? new Date(profile[key]) : null
+      return date && !Number.isNaN(date.getTime()) ? date.toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : ''
+    }
+    return displayProfileValue(key, profile?.[key])
+  }
+  const tab = VENDOR_TABS[activeTab]
+
   return createPortal(
     <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-950/50 p-4" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <section className="flex max-h-[90dvh] w-full max-w-xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="vendor-info-title">
-        <header className="flex items-start justify-between gap-4 border-b-2 border-[#6aafff] bg-[#eef6ff] px-5 py-3.5">
+      <section className="flex max-h-[90dvh] w-full max-w-4xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="vendor-info-title">
+        <header className="flex items-center justify-between gap-4 border-b-2 border-[#6aafff] bg-[#eef6ff] px-5 py-4">
           <div className="flex min-w-0 items-center gap-3">
-            <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-[#e6f1ff] text-[#3a73b8]"><Building2 size={18} /></span>
+            <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-[#e1edfb] text-sm font-bold text-[#3a5f8f]">{initials}</span>
             <div className="min-w-0">
-              <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-[#4a7ab5]">Vendor details</p>
-              <h2 id="vendor-info-title" className="truncate text-[17px] font-bold text-[#102a4c]">{vendorName(invoice)}</h2>
+              <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-[#4a7ab5]">Vendor record</p>
+              <h2 id="vendor-info-title" className="truncate text-[17px] font-bold text-[#102a4c]">{name}</h2>
             </div>
           </div>
-          <button type="button" onClick={onClose} aria-label="Close" className="grid size-8 shrink-0 place-items-center rounded-full bg-white/80 text-[#5f7895] transition hover:bg-white hover:text-[#102a4c]"><X size={18} /></button>
+          <div className="flex shrink-0 items-center gap-2">
+            {profile?.assigned_rm && <span className={HEADER_CHIP}>RM: {profile.assigned_rm}</span>}
+            {profile?.sap_vendor && <span className={HEADER_CHIP}>SAP Vendor {profile.sap_vendor}</span>}
+            {status && <span className="rounded-full border border-[#cdbff5] bg-[#f4f0ff] px-2.5 py-1 text-[11px] font-semibold capitalize text-[#5b3fb5]">&bull; {status}</span>}
+            <button type="button" onClick={onClose} aria-label="Close" className="grid size-8 shrink-0 place-items-center rounded-full bg-white/80 text-[#5f7895] transition hover:bg-white hover:text-[#102a4c]"><X size={18} /></button>
+          </div>
         </header>
-        <div className="overflow-y-auto px-5 py-4">
-          <DetailSection title="Vendor">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Vendor Name" value={vendorName(invoice)} />
-              <Field label="GSTIN" value={vendorGstin(invoice)} />
-              <Field label="GST Status" value={verified ? `Verified${gstStatus ? ` · ${gstStatus}` : ''}` : (gstStatus || 'Not verified')} />
-              <Field label="Legal Name" value={pick(invoice, ['vendor_gstin_legal_name'])} />
-              <Field label="Trade Name" value={pick(invoice, ['vendor_gstin_trade_name'])} />
-              <Field wide label="Address" value={pick(invoice, ['vendor_address', 'supplier_address', 'address'])} />
-            </div>
-          </DetailSection>
+        <nav className="flex shrink-0 gap-5 overflow-x-auto border-b border-[#dce6f1] px-5 pt-3">
+          {VENDOR_TABS.map((candidate, index) => (
+            <button key={candidate.label} type="button" onClick={() => setActiveTab(index)} style={index === activeTab ? BTN_XS_BOLD : LINK_XS} className={`shrink-0 whitespace-nowrap border-b-2 py-2.5 transition ${index === activeTab ? 'border-[#1265c8] text-[#1265c8]' : 'border-transparent text-[#5f7895] hover:text-[#102a4c]'}`}>{candidate.label}</button>
+          ))}
+        </nav>
+        <div className="h-[440px] max-h-full overflow-y-auto px-5 py-4">
+          {tab.documents ? <VendorDocumentsTab /> : tab.sections.map((section) => (
+            <DetailSection key={section.title} title={section.title}>
+              <div className="grid gap-4 sm:grid-cols-3">
+                {section.keys.map(([key, label]) => (
+                  <div key={key} className={WIDE_VENDOR_KEYS.has(key) ? 'sm:col-span-3' : ''}>
+                    <p className="text-[11px] font-semibold tracking-[0.02em] text-[#607a98]">{label}</p>
+                    <p className="mt-1.5 min-h-5 break-words text-[13px] font-medium leading-5 tabular-nums text-[#102a4c]">{display(valueOf(key))}</p>
+                  </div>
+                ))}
+              </div>
+            </DetailSection>
+          ))}
         </div>
         <footer className="flex justify-end border-t border-[#dce6f1] bg-[#fbfcfe] px-5 py-3">
           <button type="button" onClick={onClose} className="inline-flex h-8 items-center rounded-md border border-[#b9d3ef] bg-white px-3.5 text-xs font-semibold text-[#1265c8] transition hover:bg-[#eaf3ff]" style={BTN_XS_BOLD}>Close</button>

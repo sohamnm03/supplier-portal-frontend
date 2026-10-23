@@ -57,7 +57,7 @@ function DocumentSlot({ type, files, onPick, onRemovePicked, onRetry, uploadStat
   }
 
   return (
-    <div id={`doc-${type.key}`} className={`flex h-full flex-col rounded-lg border bg-white p-3 ${flag?.status === 'open' ? 'border-red-300 bg-red-50/40' : 'border-slate-200'}`}>
+    <div id={`doc-${type.key}`} className={`flex h-full min-w-0 flex-col rounded-lg border bg-white p-3 ${flag?.status === 'open' ? 'border-red-300 bg-red-50/40' : 'border-slate-200'}`}>
       <div className="mb-2 min-h-9">
         <p className="text-[11px] font-bold uppercase tracking-[0.04em] text-navy-900">{type.label}</p>
         {type.hint && <p className="text-[11px] leading-4 text-slate-500">{type.hint}</p>}
@@ -74,17 +74,19 @@ function DocumentSlot({ type, files, onPick, onRemovePicked, onRetry, uploadStat
       />
 
       {existing.length > 0 && (
-        <ul className="mb-2 grid gap-1.5">
+        <ul className="mb-2 flex min-w-0 flex-col gap-1.5">
           {existing.map((file) => {
             const id = idOf(file)
             const busy = deleting === id
             return (
-              <li key={id} className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5">
+              <li key={id} className="min-w-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5">
                 <div className="flex items-center gap-2">
                   <FileText size={16} className="shrink-0 text-slate-500" aria-hidden="true" />
-                  {onPreview && file.blob_name
-                    ? <button type="button" onClick={() => onPreview(uploadedDocumentId(file))} className="min-w-0 flex-1 truncate text-left text-xs font-bold text-navy-900 hover:text-brand-700 hover:underline" title={file.original_name}>{file.original_name}</button>
-                    : <span className="min-w-0 flex-1 truncate text-xs font-bold text-navy-900" title={file.original_name}>{file.original_name}</span>}
+                  <span className="min-w-0 flex-1 basis-0 overflow-hidden">
+                    {onPreview && file.blob_name
+                      ? <button type="button" onClick={() => onPreview(uploadedDocumentId(file))} className="block max-w-full truncate text-left font-bold text-navy-900 hover:text-brand-700 hover:underline" style={FILE_NAME_STYLE} title={file.original_name}>{file.original_name}</button>
+                      : <span className="block truncate font-bold text-navy-900" style={FILE_NAME_STYLE} title={file.original_name}>{file.original_name}</span>}
+                  </span>
                   <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">Uploaded</span>
                   {onPreview && file.blob_name && (
                     <button type="button" onClick={() => onPreview(uploadedDocumentId(file))} aria-label={`Preview ${file.original_name}`} title="Preview" className="grid size-6 shrink-0 place-items-center rounded-md text-slate-500 transition hover:bg-slate-200 hover:text-brand-700">
@@ -125,17 +127,19 @@ function DocumentSlot({ type, files, onPick, onRemovePicked, onRetry, uploadStat
       )}
 
       {files.length > 0 && (
-        <ul className="mb-2 grid gap-1.5">
+        <ul className="mb-2 flex min-w-0 flex-col gap-1.5">
           {files.map((file, index) => {
             const state = uploadState[fileKey(type.key, file)] || { status: 'uploading' }
             const failed = state.status === 'failed'
             return (
-            <li key={fileKey(type.key, file)} className={`rounded-lg border px-2.5 py-1.5 ${failed ? 'border-red-200 bg-red-50/60' : 'border-emerald-200 bg-emerald-50/60'}`}>
+            <li key={fileKey(type.key, file)} className={`min-w-0 overflow-hidden rounded-lg border px-2.5 py-1.5 ${failed ? 'border-red-200 bg-red-50/60' : 'border-emerald-200 bg-emerald-50/60'}`}>
              <div className="flex items-center gap-2">
               <FileText size={16} className={`shrink-0 ${failed ? 'text-red-600' : 'text-emerald-700'}`} aria-hidden="true" />
-              {onPreview
-                ? <button type="button" onClick={() => onPreview(newDocumentId(type.key, index))} className="min-w-0 flex-1 truncate text-left text-xs font-bold text-navy-900 hover:text-brand-700 hover:underline" title={file.name}>{file.name}</button>
-                : <span className="min-w-0 flex-1 truncate text-xs font-bold text-navy-900" title={file.name}>{file.name}</span>}
+              <span className="min-w-0 flex-1 basis-0 overflow-hidden">
+                {onPreview
+                  ? <button type="button" onClick={() => onPreview(newDocumentId(type.key, index))} className="block max-w-full truncate text-left font-bold text-navy-900 hover:text-brand-700 hover:underline" style={FILE_NAME_STYLE} title={file.name}>{file.name}</button>
+                  : <span className="block truncate font-bold text-navy-900" style={FILE_NAME_STYLE} title={file.name}>{file.name}</span>}
+              </span>
               {failed
                 ? <span className="shrink-0 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700">Not uploaded</span>
                 : <span className="inline-flex shrink-0 items-center gap-1 text-[11px] font-semibold text-slate-600" role="status"><Loader /> Uploading…</span>}
@@ -198,6 +202,9 @@ function DocumentSlot({ type, files, onPick, onRemovePicked, onRetry, uploadStat
 // `documents` is { [typeKey]: File[] } and lives in the page, so it survives moving between steps. `existing` is what is
 // already uploaded ({ [typeKey]: [{ original_name, blob_name }] }); a new file replaces it, and `onDeleteExisting(type, file)` removes one. `flags` are the documents a returned
 // application was flagged for, each with its status.
+// Buttons take the page's inherited font size (a global rule beats the Tailwind size class), so the file name's size is set here.
+const FILE_NAME_STYLE = { fontSize: '0.75rem', lineHeight: '1rem' }
+
 export default function SupportingDocuments({ documents, onPick, onRemovePicked, onRetry, uploadState = {}, uploading = false, existing = {}, onDeleteExisting, onPreview, flags = {}, onConfirm, onUnconfirm }) {
   return (
     <FormSection
@@ -206,7 +213,7 @@ export default function SupportingDocuments({ documents, onPick, onRemovePicked,
       description="Attach documents that support the details above. PDF, JPG or PNG, up to 5 MB each. Files upload as soon as you pick them. A new file replaces the one uploaded, or remove it with the x."
     >
       {uploading && <p className="mb-2 flex items-center gap-2 text-xs font-semibold text-slate-600" role="status"><Loader /> Uploading documents…</p>}
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-3 md:grid-cols-[repeat(2,minmax(0,1fr))] xl:grid-cols-[repeat(3,minmax(0,1fr))]">
         {documentTypes.map((type) => (
           <DocumentSlot
             key={type.key}

@@ -3,6 +3,7 @@ import { extractInvoice as extractInvoiceApi, getVendorInvoices } from '../api/v
 
 const ACCEPTED_EXTENSIONS = ['.pdf', '.png', '.jpg', '.jpeg']
 const MAX_SIZE = 10 * 1024 * 1024
+const POLL_INTERVAL_MS = 5000
 
 const isAcceptedFile = (file) => ACCEPTED_EXTENSIONS.some((ext) => file.name.toLowerCase().endsWith(ext))
 
@@ -84,6 +85,38 @@ export default function useInvoiceUploads(vendorId) {
       })
 
     return () => { ignore = true }
+  }, [vendorId])
+
+  // Keeps the list live: a reviewer returning or approving an invoice shows up without a page refresh. Polls quietly while the tab is
+  // visible and again as soon as it regains focus; a failed poll is ignored, and the list only re-renders when something changed.
+  useEffect(() => {
+    if (!vendorId) return undefined
+    let ignore = false
+    let lastSnapshot = null
+
+    const refresh = () => {
+      if (document.visibilityState !== 'visible') return
+      getVendorInvoices(vendorId)
+        .then((records) => {
+          if (ignore) return
+          const snapshot = JSON.stringify(records)
+          if (snapshot === lastSnapshot) return
+          lastSnapshot = snapshot
+          const remoteInvoices = records.map(normalizeInvoice)
+          setInvoices((current) => [...current.filter((invoice) => invoice.source !== 'api'), ...remoteInvoices])
+        })
+        .catch(() => {})
+    }
+
+    const timer = setInterval(refresh, POLL_INTERVAL_MS)
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      ignore = true
+      clearInterval(timer)
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', refresh)
+    }
   }, [vendorId])
 
   // Fetches the vendor's invoices again (after one was replaced) and resolves with them, so a caller can wait for the new data.

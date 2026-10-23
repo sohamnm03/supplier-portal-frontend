@@ -6,7 +6,7 @@ export const vendorRequestSchema = z.object({
   vendorLegalName: required('Vendor legal name'), vendorPhoneCode: required('Country code'), vendorPhone: required('Phone number'),vendorEmail: required('Email address').email('Enter a valid email address'), vendorType: required('Vendor type'), yearEstablished: z.string().optional().refine((v) => !v || (/^\d{4}$/.test(v) && +v <= new Date().getFullYear()), 'Enter a valid year'), currency: required('Currency'), registrationNumber: required('Registration number'), msmeStatus: required('MSME status'), assignedRm: z.string().optional(), udyamNumber: z.string().optional(),
   registeredAddress1: required('Address'), registeredDistrict: required('District'), registeredCity: required('City'), registeredState: required('State'), registeredPostalCode: required('Postal code'),
   pan: required('PAN'), gstin: z.string().optional(), aadhaar: z.string().optional(), cin: z.string().optional(),
-  accountHolderName: required('Account holder name'), bankName: required('Bank name'), branchName: required('Branch name'), accountNumber: required('Account number').regex(/^\d{6,34}$/, 'Enter a valid 6–34 digit account number'), ifsc: required('IFSC code'),
+  accountHolderName: required('Account holder name'), bankName: required('Bank name'), branchName: required('Branch name'), accountNumber: required('Account number').regex(/^\d{9,18}$/, 'Enter a valid 9–18 digit account number (digits only)'), ifsc: required('IFSC code'),
   accurateDeclaration: z.boolean(), termsDeclaration: z.boolean(),
 }).superRefine((data, ctx) => {
   const add = (path, message) => ctx.addIssue({ code: 'custom', path: [path], message })

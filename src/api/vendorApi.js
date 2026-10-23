@@ -553,6 +553,9 @@ export async function previewSignedAgreement(id, payload) {
 
 export const sendAgreementCode =(id) => agreementCall(`/vendors/me/agreements/${id}/send-code`, { method: 'POST' }, 'Unable to send the code. Please try again.')
 
+// Whether the emailed code was confirmed - by typing it, or by opening the link in the same email. Polled while the code is pending.
+export const getAgreementCodeStatus = (id) => agreementCall(`/vendors/me/agreements/${id}/code-status`, undefined, 'Unable to check the verification status.')
+
 export const verifyAgreementCode = (id, otp) => agreementCall(`/vendors/me/agreements/${id}/verify-code`, jsonRequest('POST', { otp }), 'Unable to verify the code. Please try again.')
 
 export const signAgreement = (id, payload) => agreementCall(`/vendors/me/agreements/${id}/sign`, jsonRequest('POST', payload), 'Unable to sign the agreement. Please try again.')

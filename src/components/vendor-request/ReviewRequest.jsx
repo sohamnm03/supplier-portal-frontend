@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ArrowLeft, Edit3, Eye, Send } from 'lucide-react'
+import { ArrowLeft, Edit3, Eye, FileText, Send } from 'lucide-react'
 import Button from '../common/Button'
 import Checkbox from '../common/Checkbox'
 import Loader from '../common/Loader'
@@ -98,20 +98,23 @@ export default function ReviewRequest({ values, documents = {}, existingDocument
               <Edit3 size={14} /> Edit
             </button>
           </div>
-          <dl className="grid grid-cols-1 gap-x-5 gap-y-3 p-4 sm:grid-cols-2 xl:grid-cols-3">
+          {/* As many columns as fit (never narrower than 15rem), so it reads the same on a small laptop as on a wide monitor. */}
+          <dl className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,15rem),1fr))] gap-3 p-4">
             {documentTypes.map(({ key, label, max }) => (
-              <div key={key}>
+              <div key={key} className="min-w-0 rounded-lg border border-slate-200 bg-white px-3 py-2.5">
                 <dt className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">{label}</dt>
-                <dd className="mt-0.5 break-words text-xs font-semibold text-slate-800">
+                <dd className="mt-1.5 min-w-0 text-xs font-semibold text-slate-800">
                   {documents[key]?.length || existingDocuments[key]?.length ? (
-                    <ul className="space-y-0.5">
+                    <ul className="flex flex-col gap-1.5">
                       {[
                         // A one-file type shows its not-yet-uploaded file instead of the uploaded one (it replaces it); several-file types show both.
                         ...(max > 1 || !documents[key]?.length ? (existingDocuments[key] || []).map((file) => ({ id: uploadedDocumentId(file), name: file.original_name, uploaded: true, canOpen: Boolean(file.blob_name) })) : []),
                         ...(documents[key] || []).map((file, index) => ({ id: newDocumentId(key, index), name: file.name, uploaded: false })),
                       ].map((entry) => (
-                        <li key={entry.id} className="flex items-center gap-1.5">
-                          <span className="min-w-0 truncate" title={entry.name}>{entry.name}{entry.uploaded ? ' (uploaded)' : ' (not uploaded)'}</span>
+                        <li key={entry.id} className="flex min-w-0 items-center gap-2 rounded-md bg-slate-50 px-2 py-1">
+                          <FileText size={14} className="shrink-0 text-slate-400" aria-hidden="true" />
+                          <span className="min-w-0 flex-1 basis-0 truncate" title={entry.name}>{entry.name}</span>
+                          <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${entry.uploaded ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{entry.uploaded ? 'Uploaded' : 'Not uploaded'}</span>
                           {onPreview && (entry.uploaded ? entry.canOpen : true) && (
                             <button type="button" onClick={() => onPreview(entry.id)} aria-label={`Preview ${entry.name}`} title="Preview" className="grid size-6 shrink-0 place-items-center rounded-md text-slate-500 transition hover:bg-blue-50 hover:text-brand-700">
                               <Eye size={14} />
