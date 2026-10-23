@@ -79,6 +79,8 @@ export default function VendorRequestPage() {
   const [uploadState, setUploadState] = useState({})
   const [uploadedTypes, setUploadedTypes] = useState([])
   const uploadChain = useRef({})
+  const listSeq = useRef(0) // numbers the uploaded-list answers so a late, older one can be ignored
+  const appliedSeq = useRef(0)
   const uploading = Object.values(uploadState).some((entry) => entry.status === 'uploading')
   const previewItems = useMemo(() => documentPreviewItems(documents, existingDocuments), [documents, existingDocuments])
   // Flagged items the vendor checked and says are correct as entered: form field names, and `doc:<type>` for documents.
@@ -194,14 +196,25 @@ export default function VendorRequestPage() {
     const run = async () => {
       try {
         await uploadVendorDocuments(profile.vendor_id, { [type]: files }, { append: multiple })
-        dropPending(type, files)
-        setUploadedTypes((current) => (current.includes(type) ? current : [...current, type]))
-        const fresh = await getMyDocuments().catch(() => null)
-        if (fresh) setExistingDocuments(fresh)
       } catch (err) {
         const message = err.message || 'The upload failed. Please try again.'
         setUploadState((current) => ({ ...current, ...Object.fromEntries(keys.map((key) => [key, { status: 'failed', error: message }])) }))
+        return
       }
+      // The row keeps showing "Uploading…" until the refreshed uploaded list is ready; then the two are swapped in ONE update
+      // (these state changes are batched), so there is never a moment with neither row.
+      const mine = ++listSeq.current
+      let fresh = null
+      for (let attempt = 0; attempt < 2 && !fresh; attempt += 1) fresh = await getMyDocuments().catch(() => null)
+      if (!fresh) {
+        // The file is stored but the list could not be read: show it from what we know rather than losing the row.
+        fresh = { ...existingDocuments }
+        const known = files.map((file) => ({ type, original_name: file.name, size: file.size }))
+        fresh[type] = multiple ? [...(existingDocuments[type] || []), ...known] : known
+      }
+      if (mine >= appliedSeq.current) { appliedSeq.current = mine; setExistingDocuments(fresh) } // a late older answer never overwrites a newer one
+      setUploadedTypes((current) => (current.includes(type) ? current : [...current, type]))
+      dropPending(type, files)
     }
     uploadChain.current[type] = (uploadChain.current[type] || Promise.resolve()).then(run)
   }
@@ -349,7 +362,11 @@ export default function VendorRequestPage() {
             uploadState={uploadState}
             uploading={uploading}
             existing={existingDocuments}
-            onDeleteExisting={async (type, file) => setExistingDocuments(await deleteMyDocument(type, file.blob_name))}
+            onDeleteExisting={async (type, file) => {
+              const mine = ++listSeq.current
+              const left = await deleteMyDocument(type, file.blob_name)
+              if (mine >= appliedSeq.current) { appliedSeq.current = mine; setExistingDocuments(left) }
+            }}
             onPreview={setPreviewId}
             flags={documentFlags}
             onConfirm={confirmDocument}

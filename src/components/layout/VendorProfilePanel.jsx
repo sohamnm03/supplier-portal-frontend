@@ -1,11 +1,13 @@
-import { useEffect, useRef, useState } from 'react'
-import { Clock, FileText, Pencil, PencilLine, X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Clock, Eye, FileText, Pencil, PencilLine, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { getMyDocuments, getUpdateRequests, getVendorProfile, UPDATE_REQUESTS_CHANGED_EVENT } from '../../api/vendorApi'
 import Button from '../common/Button'
 import useAgreementHold, { HOLD_TOOLTIP } from '../../hooks/useAgreementHold'
 import Loader from '../common/Loader'
 import EditDetailsModal from './EditDetailsModal'
+import DocumentPreview from '../vendor-request/DocumentPreview'
+import { documentPreviewItems, uploadedDocumentId } from '../../utils/documentPreview'
 import { displayProfileValue, isRegisteredMsme, sections } from './profileFields'
 import { isCompanyType } from '../../data/vendorTypes'
 import { documentTypes } from '../../data/documentTypes'
@@ -25,6 +27,9 @@ export default function VendorProfilePanel({ open, onClose, profile, onProfileRe
   const [openRequest, setOpenRequest] = useState(null)
   const [sentNotice, setSentNotice] = useState(false)
   const [documents, setDocuments] = useState(null)
+  const [previewId, setPreviewId] = useState(null)
+  // The received documents as a gallery for the preview (the same one the application form uses).
+  const previewItems = useMemo(() => documentPreviewItems({}, documents || {}).filter((item) => item.blobName), [documents])
 
   const refreshRef = useRef(onProfileRefresh)
   useEffect(() => { refreshRef.current = onProfileRefresh }, [onProfileRefresh])
@@ -159,7 +164,20 @@ export default function VendorProfilePanel({ open, onClose, profile, onProfileRe
                         {Object.entries(documents).map(([type, files]) => (
                           <li key={type} className="text-xs">
                             <span className="font-bold text-navy-900">{documentTypes.find((item) => item.key === type)?.label || type}</span>
-                            <span className="text-slate-600"> · {files.map((file) => file.original_name).join(', ')}</span>
+                            <ul className="mt-0.5 space-y-0.5">
+                              {files.map((file) => (
+                                <li key={file.blob_name || file.original_name} className="flex items-center justify-between gap-2">
+                                  {file.blob_name
+                                    ? <button type="button" onClick={() => setPreviewId(uploadedDocumentId(file))} className="min-w-0 truncate text-left text-slate-600 hover:text-brand-700 hover:underline" title={file.original_name}>{file.original_name}</button>
+                                    : <span className="min-w-0 truncate text-slate-600" title={file.original_name}>{file.original_name}</span>}
+                                  {file.blob_name && (
+                                    <button type="button" onClick={() => setPreviewId(uploadedDocumentId(file))} aria-label={`Preview ${file.original_name}`} title="Preview" className="grid size-6 shrink-0 place-items-center rounded-md text-brand-600 transition hover:bg-brand-50 hover:text-brand-700">
+                                      <Eye size={14} />
+                                    </button>
+                                  )}
+                                </li>
+                              ))}
+                            </ul>
                           </li>
                         ))}
                       </ul>
@@ -194,6 +212,9 @@ export default function VendorProfilePanel({ open, onClose, profile, onProfileRe
           )}
         </aside>
       </div>}
+
+      {/* A portal above the panel (z-60 over the panel's z-50): closing it, or pressing Esc, returns to the panel. */}
+      <DocumentPreview items={previewItems} activeId={previewId} onChange={setPreviewId} onClose={() => setPreviewId(null)} />
 
       <EditDetailsModal
         open={editOpen}

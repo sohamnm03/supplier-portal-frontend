@@ -73,7 +73,7 @@ function DocumentSlot({ type, files, onPick, onRemovePicked, onRetry, uploadStat
         onChange={(event) => { addFiles(event.target.files); event.target.value = '' }}
       />
 
-      {(multiple || files.length === 0) && existing.length > 0 && (
+      {existing.length > 0 && (
         <ul className="mb-2 grid gap-1.5">
           {existing.map((file) => {
             const id = idOf(file)

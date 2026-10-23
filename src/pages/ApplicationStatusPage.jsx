@@ -61,19 +61,6 @@ const formatDate = (value) => {
   return date && !Number.isNaN(date.getTime()) ? date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'
 }
 
-const REVIEW_WORKING_DAYS = 3
-
-// The date by which a decision is expected: the working days (Monday to Friday) promised in the headline, counted from submission.
-const expectedBy = (submittedAt) => {
-  const date = submittedAt ? new Date(submittedAt) : null
-  if (!date || Number.isNaN(date.getTime())) return null
-  for (let added = 0; added < REVIEW_WORKING_DAYS;) {
-    date.setDate(date.getDate() + 1)
-    if (date.getDay() !== 0 && date.getDay() !== 6) added += 1
-  }
-  return date
-}
-
 const openProfile = () => window.dispatchEvent(new Event(OPEN_PROFILE_EVENT))
 
 // What a vendor sees between submitting their application and being approved: progress only, nothing to do.
@@ -149,36 +136,39 @@ export default function ApplicationStatusPage() {
   const reasons = profile?.rejection?.items || []
   const overallRemark = profile?.rejection?.overall_remark
 
-  const expected = rejected || changeRequested || signed ? null : expectedBy(profile?.submitted_at)
   // `open` rows open what was submitted.
   const details = [
     // The request ID means nothing to a vendor under review; a closed application needs it to talk to support.
     ...(rejected ? [['Request ID', `VR-${profile?.vendor_id}`]] : []),
     ['Vendor', vendorName, true],
     ['Submitted', formatDate(profile?.submitted_at)],
-    ...(expected ? [['Decision expected by', formatDate(expected)]] : []),
     ['Status', rejected ? 'Not approved' : changeRequested ? 'Change requested' : signed ? 'Agreement signed' : 'In review'],
   ]
 
   return (
     <AppShell breadcrumb="Application status">
+      {/* The shell's main area does not scroll on a tall screen, so the page scrolls here and always ends with room below the card. */}
+      <div className="h-full min-h-0 overflow-y-auto">
+      <div className="flex min-h-full items-center justify-center py-6">
       <PageContainer className="max-w-4xl">
         <section className="overflow-hidden rounded-2xl border border-blue-200/80 bg-white shadow-[0_22px_60px_rgba(40,83,130,0.1)]">
-          <div className={`px-6 py-7 sm:px-9 ${rejected ? 'bg-red-50' : 'bg-[#eef7ff]'}`}>
-            <span className={`grid size-12 place-items-center rounded-full ${rejected ? 'bg-red-100 text-red-700' : 'bg-brand-100 text-brand-700'}`}>
-              {rejected ? <AlertCircle size={26} /> : signed ? <FileSignature size={26} /> : changeRequested ? <PencilLine size={26} /> : <Clock3 size={26} />}
-            </span>
-            <p className="eyebrow mt-5">{rejected ? 'Application closed' : changeRequested ? 'Change request' : signed ? 'Agreement' : 'Application status'}</p>
-            <h1 className="mt-2 text-2xl font-extrabold tracking-[-0.03em] text-navy-950 sm:text-3xl">{headline}</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">{subline}</p>
-            {(profile?.submission_round || 0) > 1 && !rejected && !changeRequested && !signed && (
-              <p className="mt-3 inline-flex rounded-full border border-blue-200 bg-white px-3 py-1 text-xs font-bold text-brand-700">
-                Resubmitted application
-              </p>
-            )}
+          <div className={`px-5 py-4 sm:px-7 ${rejected ? 'bg-red-50' : 'bg-[#eef7ff]'}`}>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <span className={`grid size-9 shrink-0 place-items-center rounded-full ${rejected ? 'bg-red-100 text-red-700' : 'bg-brand-100 text-brand-700'}`}>
+                  {rejected ? <AlertCircle size={20} /> : signed ? <FileSignature size={20} /> : changeRequested ? <PencilLine size={20} /> : <Clock3 size={20} />}
+                </span>
+                <p className="eyebrow">{rejected ? 'Application closed' : changeRequested ? 'Change request' : signed ? 'Agreement' : 'Application status'}</p>
+              </div>
+              {(profile?.submission_round || 0) > 1 && !rejected && !changeRequested && !signed && (
+                <p className="shrink-0 rounded-full border border-blue-200 bg-white px-3 py-1 text-xs font-bold text-brand-700">Resubmitted application</p>
+              )}
+            </div>
+            <h1 className="mt-2 text-xl font-extrabold tracking-[-0.03em] text-navy-950 sm:text-2xl">{headline}</h1>
+            <p className="mt-1 max-w-2xl text-sm leading-5 text-slate-600">{subline}</p>
           </div>
 
-          <div className="grid gap-8 p-6 sm:p-9 md:grid-cols-[1.2fr_1fr]">
+          <div className="grid items-start gap-6 p-5 sm:p-6 md:grid-cols-[1.2fr_1fr]">
             {!rejected && (
               <div>
               <ol className="space-y-5" aria-label="Review progress">
@@ -204,66 +194,47 @@ export default function ApplicationStatusPage() {
             )}
 
             <div className={rejected ? 'md:col-span-2' : ''}>
-              {changeRequested ? (
-                <dl className="divide-y divide-slate-100 overflow-hidden rounded-lg border border-slate-200 bg-slate-50/50">
-                  {details.map(([label, value, opens]) => (
-                    <div key={label} className="flex items-center justify-between gap-4 px-4 py-2.5">
-                      <dt className="shrink-0 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">{label}</dt>
-                      <dd className="min-w-0 text-right text-[13px] font-bold text-navy-900">
-                        {opens ? (
-                          <button type="button" onClick={openProfile} title="View your submitted details" className="group inline-flex max-w-full items-center gap-1 transition hover:text-brand-700">
-                            <span className="truncate">{value}</span>
-                            <ChevronRight size={15} className="shrink-0 text-slate-400 transition group-hover:translate-x-0.5 group-hover:text-brand-600" />
-                          </button>
-                        ) : value}
-                      </dd>
-                    </div>
-                  ))}
-                </dl>
-              ) : (
-                <dl className={`grid gap-3 sm:grid-cols-2 ${rejected ? 'lg:grid-cols-4' : 'md:grid-cols-1'}`}>
-                  {details.map(([label, value, opens]) => (
-                    <div key={label} className="rounded-lg border border-slate-200 bg-slate-50/50 px-4 py-3">
-                      <dt className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">{label}</dt>
-                      <dd className="mt-1 break-words text-sm font-bold text-navy-900">
-                        {opens ? (
-                          <button type="button" onClick={openProfile} title="View your submitted details" className="group flex w-full items-center justify-between gap-2 text-left transition hover:text-brand-700">
-                            <span className="break-words">{value}</span>
-                            <ChevronRight size={16} className="shrink-0 text-slate-400 transition group-hover:translate-x-0.5 group-hover:text-brand-600" />
-                          </button>
-                        ) : value}
-                      </dd>
-                    </div>
-                  ))}
-                </dl>
-              )}
+              <dl className="grid grid-cols-2 gap-2">
+                {details.map(([label, value, opens]) => (
+                  <div key={label} className={`rounded-lg border border-slate-200 bg-slate-50/50 p-3 ${label === 'Vendor' ? 'col-span-2' : ''}`}>
+                    <dt className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">{label}</dt>
+                    <dd className="mt-0.5 break-words text-[13px] font-bold text-navy-900">
+                      {opens ? (
+                        <button type="button" onClick={openProfile} title="View your submitted details" className="group flex w-full items-center justify-between gap-2 text-left transition hover:text-brand-700">
+                          <span className="break-words">{value}</span>
+                          <ChevronRight size={16} className="shrink-0 text-slate-400 transition group-hover:translate-x-0.5 group-hover:text-brand-600" />
+                        </button>
+                      ) : value}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
               {changeRequested && (
-                <section className="mt-3 overflow-hidden rounded-lg border border-blue-200 bg-white shadow-[0_6px_18px_rgba(40,83,130,0.06)]" aria-label="Details you asked to change">
-                  <div className="flex items-start gap-3 border-b border-blue-100 bg-[#eef7ff] px-4 py-3">
-                    <span className="grid size-8 shrink-0 place-items-center rounded-full bg-white text-brand-700 ring-1 ring-blue-100"><PencilLine size={15} /></span>
+                <section className="mt-2.5 overflow-hidden rounded-lg border border-blue-200 bg-white" aria-label="Details you asked to change">
+                  <div className="flex items-center gap-2.5 border-b border-blue-100 bg-[#eef7ff] px-3 py-2">
+                    <span className="grid size-7 shrink-0 place-items-center rounded-full bg-white text-brand-700 ring-1 ring-blue-100"><PencilLine size={14} /></span>
                     <div>
                       <h2 className="text-[13px] font-extrabold text-navy-900">Your change request</h2>
-                      <p className="mt-0.5 text-xs leading-5 text-slate-600">Waiting for our team to send your application back to you.</p>
+                      <p className="text-xs leading-4 text-slate-600">Waiting for our team to send your application back to you.</p>
                     </div>
                   </div>
-                  <div className="px-4 py-3">
+                  <div className="px-3 py-2">
                     <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">Details you want to change</p>
-                    <ul className="mt-2 flex flex-wrap gap-1.5">
-                      {requestedFields.map((field) => (
-                        <li key={field.field_key} className="rounded-md border border-blue-100 bg-brand-50 px-2.5 py-1 text-xs font-bold text-brand-700">{field.field_label}</li>
-                      ))}
-                    </ul>
-                  </div>
-                  <div className="flex items-center justify-between gap-3 border-t border-slate-100 bg-slate-50/60 px-4 py-2.5">
-                    <p className="text-xs leading-5 text-slate-500">Changed your mind? Your application stays in review.</p>
-                    <Button variant="danger" className="min-h-9! shrink-0 px-4! py-1.5! text-[13px]!" onClick={() => { setActionError(''); setCancelOpen(true) }}>
-                      <Undo2 size={15} /> Withdraw request
-                    </Button>
+                    <div className="mt-1.5 flex flex-wrap items-end justify-between gap-x-3 gap-y-2">
+                      <ul className="flex min-w-0 flex-1 flex-wrap gap-1.5">
+                        {requestedFields.map((field) => (
+                          <li key={field.field_key} className="rounded-md border border-blue-100 bg-brand-50 px-2 py-0.5 text-xs font-bold text-brand-700">{field.field_label}</li>
+                        ))}
+                      </ul>
+                      <Button variant="danger" aria-label="Withdraw request" className="min-h-7! shrink-0 px-2.5! py-0.5! text-xs!" onClick={() => { setActionError(''); setCancelOpen(true) }}>
+                        <Undo2 size={13} /> Withdraw request
+                      </Button>
+                    </div>
                   </div>
                 </section>
               )}
               {rejected && (reasons.length > 0 || overallRemark) && (
-                <section className="mt-4 overflow-hidden rounded-lg border border-red-200 bg-white" aria-label="Why the application was not approved">
+                <section className="mt-2.5 overflow-hidden rounded-lg border border-red-200 bg-white" aria-label="Why the application was not approved">
                   <h2 className="border-b border-red-100 bg-red-50 px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.08em] text-red-800">
                     Why it was not approved
                   </h2>
@@ -284,11 +255,11 @@ export default function ApplicationStatusPage() {
                 </section>
               )}
               {profile?.declined_agreement && stage === STAGES.checkerReview && (
-                <p className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs leading-5 text-slate-700" role="note">
+                <p className="mt-2.5 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs leading-5 text-slate-700" role="note">
                   You declined the agreement on {formatDate(profile.declined_agreement.declined_at)}: “{profile.declined_agreement.reason}”. Our team will review it and send you an updated agreement.
                 </p>
               )}
-              <div className="mt-4 flex flex-col gap-4 rounded-lg border border-blue-200 bg-brand-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="mt-2.5 flex flex-col gap-2.5 rounded-lg border border-blue-200 bg-brand-50 p-3 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-xs leading-5 text-slate-700">
                   <CheckCircle2 size={14} className="mr-1.5 inline -translate-y-px text-brand-600" />
                   {rejected
@@ -307,7 +278,7 @@ export default function ApplicationStatusPage() {
                 )}
               </div>
               {actionError && <p role="alert" className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-800">{actionError}</p>}
-              <div className={`mt-3 grid gap-2 ${rejected || changeRequested ? '' : 'sm:grid-cols-2'}`}>
+              <div className="mt-2.5 grid gap-2 sm:grid-cols-2 sm:[&>*:last-child:nth-child(odd)]:col-span-2">
                 <Button variant="secondary" className="min-h-9! w-full py-1.5! text-[13px]!" onClick={openProfile}>
                   <Eye size={15} /> View submitted details
                 </Button>
@@ -323,7 +294,7 @@ export default function ApplicationStatusPage() {
                 )}
               </div>
               {!rejected && (
-                <p className="mt-2 text-center text-[11px] text-slate-500" role="status">
+                <p className="mt-1.5 text-center text-[11px] text-slate-500" role="status">
                   Updated {checkedAt.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })} · updates automatically
                 </p>
               )}
@@ -331,6 +302,8 @@ export default function ApplicationStatusPage() {
           </div>
         </section>
       </PageContainer>
+      </div>
+      </div>
       <RequestChangesModal
         open={requestOpen}
         onClose={() => setRequestOpen(false)}

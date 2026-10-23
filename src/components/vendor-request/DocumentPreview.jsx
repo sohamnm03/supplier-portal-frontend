@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronLeft, ChevronRight, Download, ExternalLink, FileWarning, X, ZoomIn, ZoomOut } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Download, ExternalLink, FileWarning, Minus, Plus, X } from 'lucide-react'
 import Button from '../common/Button'
 import Loader from '../common/Loader'
 import { fetchMyDocumentBlob } from '../../api/vendorApi'
@@ -8,6 +8,10 @@ import { formatFileSize } from '../../utils/formatters'
 import { isImageName } from '../../utils/documentPreview'
 
 const SMALL = 'min-h-9! px-4! py-1.5! text-[13px]!'
+// Zoom steps relative to the image's fit-to-window size (1 = fit).
+const ZOOM_STEPS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4]
+const FIT = ZOOM_STEPS.indexOf(1)
+const PAD = 12
 
 // Loads the file of the item being previewed as a blob: URL (fetched only now, revoked when it changes or closes).
 function usePreviewFile(item, attempt) {
@@ -44,17 +48,27 @@ export default function DocumentPreview({ items, activeId, onChange, onClose }) 
   const index = items.findIndex((entry) => entry.id === activeId)
   const item = index >= 0 ? items[index] : null
   const [attempt, setAttempt] = useState(0)
-  const [zoomed, setZoomed] = useState(false)
+  const [zoomStep, setZoomStep] = useState(FIT)
+  const [natural, setNatural] = useState(null) // { w, h } of the image being shown
+  const [stage, setStage] = useState({ w: 0, h: 0 }) // the size of the scroll area
+  const scroller = useRef(null)
+  const drag = useRef(null)
+  const zoomIn = useCallback(() => setZoomStep((step) => Math.min(ZOOM_STEPS.length - 1, step + 1)), [])
+  const zoomOut = useCallback(() => setZoomStep((step) => Math.max(0, step - 1)), [])
+  const zoomFit = useCallback(() => setZoomStep(FIT), [])
   const { url, error, loading } = usePreviewFile(item, attempt)
   const dialogRef = useRef(null)
   const image = item ? (item.file ? item.file.type.startsWith('image/') : isImageName(item.name)) : false
+  const imageRef = useRef(image)
+  imageRef.current = image
 
   const go = useCallback((step) => {
     if (items.length < 2 || index < 0) return
     onChange(items[(index + step + items.length) % items.length].id)
   }, [items, index, onChange])
 
-  useEffect(() => { setZoomed(false); setAttempt(0) }, [activeId])
+  useEffect(() => { setZoomStep(FIT); setNatural(null); setAttempt(0) }, [activeId])
+  useEffect(() => { setNatural(null) }, [url])
 
   useEffect(() => {
     if (!item) return undefined
@@ -64,6 +78,9 @@ export default function DocumentPreview({ items, activeId, onChange, onClose }) 
       if (event.key === 'Escape') { event.stopPropagation(); onClose() }
       else if (event.key === 'ArrowRight') go(1)
       else if (event.key === 'ArrowLeft') go(-1)
+      else if (imageRef.current && !/^(INPUT|TEXTAREA|SELECT)$/.test(event.target?.tagName || '') && (event.key === '+' || event.key === '=')) { event.preventDefault(); zoomIn() }
+      else if (imageRef.current && !/^(INPUT|TEXTAREA|SELECT)$/.test(event.target?.tagName || '') && (event.key === '-' || event.key === '_')) { event.preventDefault(); zoomOut() }
+      else if (imageRef.current && !/^(INPUT|TEXTAREA|SELECT)$/.test(event.target?.tagName || '') && event.key === '0') { event.preventDefault(); zoomFit() }
       else if (event.key === 'Tab') {
         const focusable = dialogRef.current?.querySelectorAll('button:not(:disabled), a[href], iframe, [tabindex]:not([tabindex="-1"])')
         if (!focusable?.length) return
@@ -75,7 +92,26 @@ export default function DocumentPreview({ items, activeId, onChange, onClose }) 
     }
     document.addEventListener('keydown', onKey)
     return () => { document.removeEventListener('keydown', onKey); previous?.focus?.() }
-  }, [Boolean(item), go, onClose]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [Boolean(item), go, onClose, zoomIn, zoomOut, zoomFit]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The scroll area's size (to work out the fit size), and Ctrl + mouse wheel to zoom (a native, non-passive listener so the page does not zoom).
+  const showingImage = Boolean(url && image)
+  useEffect(() => {
+    const box = scroller.current
+    if (!box || !showingImage) return undefined
+    const measure = () => setStage({ w: box.clientWidth, h: box.clientHeight })
+    measure()
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure)
+    observer?.observe(box)
+    const onWheel = (event) => {
+      if (!event.ctrlKey) return
+      event.preventDefault()
+      if (event.deltaY < 0) zoomIn()
+      else if (event.deltaY > 0) zoomOut()
+    }
+    box.addEventListener('wheel', onWheel, { passive: false })
+    return () => { observer?.disconnect(); box.removeEventListener('wheel', onWheel) }
+  }, [showingImage, zoomIn, zoomOut])
 
   if (!item) return null
 
@@ -110,7 +146,7 @@ export default function DocumentPreview({ items, activeId, onChange, onClose }) 
           </div>
         </header>
 
-        <div className={`relative min-h-0 flex-1 bg-slate-200 ${image && url ? 'overflow-auto' : 'overflow-hidden'}`}>
+        <div className="relative min-h-0 flex-1 overflow-hidden bg-slate-200">
           {loading && <div className="absolute inset-0 grid place-items-center"><span className="flex items-center gap-2 text-sm font-semibold text-slate-600"><Loader /> Loading the document…</span></div>}
           {error && (
             <div className="absolute inset-0 grid place-items-center px-4 text-center">
@@ -122,21 +158,53 @@ export default function DocumentPreview({ items, activeId, onChange, onClose }) 
               </div>
             </div>
           )}
-          {url && image && (
-            <div className={`flex min-h-full min-w-full items-center justify-center p-3 ${zoomed ? '' : 'h-full'}`}>
-              <img
-                src={url}
-                alt={item.name}
-                onClick={() => setZoomed((value) => !value)}
-                title={zoomed ? 'Click to fit the window' : 'Click to zoom to 100%'}
-                className={zoomed ? 'max-w-none cursor-zoom-out' : 'max-h-full max-w-full cursor-zoom-in object-contain'}
-              />
-            </div>
-          )}
+          {url && image && (() => {
+            // The image is sized explicitly (its fit size times the zoom), so the scroll area's scrollbars work and it can be panned.
+            const availW = Math.max(40, stage.w - PAD * 2)
+            const availH = Math.max(40, stage.h - PAD * 2)
+            const fitW = natural ? Math.min(natural.w, availW, (availH * natural.w) / natural.h) : 0
+            const zoom = ZOOM_STEPS[zoomStep]
+            const width = fitW * zoom
+            const canPan = natural && (width + PAD * 2 > stage.w || (width * natural.h) / natural.w + PAD * 2 > stage.h)
+            return (
+              <>
+                <div
+                  ref={scroller}
+                  className={`absolute inset-0 overflow-auto ${canPan ? 'cursor-grab active:cursor-grabbing' : ''}`}
+                  onDoubleClick={() => setZoomStep((step) => (ZOOM_STEPS[step] === 2 ? FIT : ZOOM_STEPS.indexOf(2)))}
+                  onPointerDown={(event) => {
+                    if (!canPan || event.button !== 0) return
+                    drag.current = { x: event.clientX, y: event.clientY, left: event.currentTarget.scrollLeft, top: event.currentTarget.scrollTop }
+                    event.currentTarget.setPointerCapture?.(event.pointerId)
+                  }}
+                  onPointerMove={(event) => {
+                    if (!drag.current) return
+                    event.currentTarget.scrollLeft = drag.current.left - (event.clientX - drag.current.x)
+                    event.currentTarget.scrollTop = drag.current.top - (event.clientY - drag.current.y)
+                  }}
+                  onPointerUp={() => { drag.current = null }}
+                  onPointerCancel={() => { drag.current = null }}
+                >
+                  <div className="flex min-h-full min-w-full" style={{ padding: PAD }}>
+                    <img
+                      src={url}
+                      alt={item.name}
+                      draggable={false}
+                      onLoad={(event) => setNatural({ w: event.currentTarget.naturalWidth || 1, h: event.currentTarget.naturalHeight || 1 })}
+                      className="m-auto block max-w-none shrink-0 select-none"
+                      style={natural ? { width } : { maxWidth: '100%', maxHeight: '100%' }}
+                    />
+                  </div>
+                </div>
+                <div className="absolute right-4 top-3 flex items-center gap-0.5 rounded-lg border border-slate-200 bg-white/95 p-0.5 shadow" role="group" aria-label="Zoom">
+                  <button type="button" onClick={zoomOut} disabled={zoomStep === 0} aria-label="Zoom out" title="Zoom out" className="grid size-7 place-items-center rounded-md text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"><Minus size={15} /></button>
+                  <button type="button" onClick={zoomFit} aria-label="Fit to window" title="Fit to window" className="min-w-[3.25rem] rounded-md px-1.5 py-1 text-center text-slate-700 transition hover:bg-slate-100" style={{ fontSize: '0.75rem', lineHeight: '1rem', fontWeight: 600 }}>{zoomStep === FIT ? 'Fit' : `${Math.round(zoom * 100)}%`}</button>
+                  <button type="button" onClick={zoomIn} disabled={zoomStep === ZOOM_STEPS.length - 1} aria-label="Zoom in" title="Zoom in" className="grid size-7 place-items-center rounded-md text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"><Plus size={15} /></button>
+                </div>
+              </>
+            )
+          })()}
           {url && !image && <iframe src={`${url}#toolbar=0&navpanes=0&view=FitH`} title={item.name} className="absolute inset-0 size-full border-0 bg-white" />}
-          {url && image && (
-            <span className="pointer-events-none absolute right-3 top-3 rounded-md bg-white/90 p-1.5 text-slate-600 shadow">{zoomed ? <ZoomOut size={16} /> : <ZoomIn size={16} />}</span>
-          )}
         </div>
 
         <footer className="border-t border-slate-200 bg-white px-4 py-2.5">
