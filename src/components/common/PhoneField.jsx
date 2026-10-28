@@ -5,8 +5,10 @@ import CountryCodeSelect from './CountryCodeSelect'
 // It only handles the typing rules (digits only, capped to the country's length, tidy pasting); the caller
 // owns the values. `inputProps` goes on the number <input> (a controlled value/onChange pair, or react-hook-form's
 // register() result) and `onNumberReplace(digits)` is how a paste that needs tidying hands back the clean number.
-export default function PhoneField({ id, codeId, code, onCodeChange, inputProps = {}, onNumberReplace, invalid = false, required = false, describedBy, controlClassName = '' }) {
+// `locked` greys out both parts and makes them read-only (e.g. once the number has been verified).
+export default function PhoneField({ id, codeId, code, onCodeChange, inputProps = {}, onNumberReplace, invalid = false, required = false, locked = false, describedBy, controlClassName = '' }) {
   const { max } = phoneRuleFor(code)
+  const controlClasses = `${controlClassName} ${locked ? 'app-field--locked' : ''}`
 
   const handleChange = (event) => {
     event.target.value = event.target.value.replace(/\D/g, '').slice(0, max)
@@ -26,11 +28,11 @@ export default function PhoneField({ id, codeId, code, onCodeChange, inputProps 
   return (
     <div className="flex gap-2">
       <div className="w-[5.5rem] shrink-0">
-        <CountryCodeSelect id={codeId} value={code} onChange={onCodeChange} invalid={invalid} controlClassName={controlClassName} />
+        <CountryCodeSelect id={codeId} value={code} onChange={onCodeChange} invalid={invalid} disabled={locked} controlClassName={controlClasses} />
       </div>
       <input
         id={id}
-        className={`app-field min-w-0 flex-1 tabular-nums ${controlClassName}`}
+        className={`app-field min-w-0 flex-1 tabular-nums ${controlClasses}`}
         type="tel"
         inputMode="numeric"
         autoComplete="tel-national"
@@ -40,6 +42,7 @@ export default function PhoneField({ id, codeId, code, onCodeChange, inputProps 
         aria-required={required || undefined}
         aria-describedby={describedBy}
         {...inputProps}
+        readOnly={locked || inputProps.readOnly}
         onChange={handleChange}
         onPaste={handlePaste}
       />

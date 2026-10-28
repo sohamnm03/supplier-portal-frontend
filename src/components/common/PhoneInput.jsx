@@ -5,7 +5,7 @@ import { flagClass, useFlag } from '../../context/flags-context'
 
 // react-hook-form wrapper around PhoneField. The country code and the number are two separate form values
 // (`codeName` and `name`); join them with joinPhone() when the full number is needed.
-export default function PhoneInput({ label, name, codeName, register, watch, setValue, error, hint, required, className = '' }) {
+export default function PhoneInput({ label, name, codeName, register, watch, setValue, error, hint, required, action, locked = false, className = '' }) {
   const code = watch(codeName) || DEFAULT_COUNTRY_CODE
   const errorId = error ? `${name}-error` : undefined
   const flag = useFlag(name)
@@ -23,18 +23,24 @@ export default function PhoneInput({ label, name, codeName, register, watch, set
         {label}{required && <span className="ml-1 text-red-600" aria-hidden="true">*</span>}
       </label>
       <input type="hidden" {...register(codeName)} />
-      <PhoneField
-        id={name}
-        codeId={codeName}
-        code={code}
-        onCodeChange={handleCodeChange}
-        inputProps={register(name)}
-        onNumberReplace={(digits) => setValue(name, digits, { shouldDirty: true, shouldValidate: true })}
-        invalid={Boolean(error)}
-        required={required}
-        describedBy={errorId}
-        controlClassName={flagClass(flag)}
-      />
+      <div className={action ? 'flex items-center gap-2' : undefined}>
+        <div className="min-w-0 flex-1">
+          <PhoneField
+            id={name}
+            codeId={codeName}
+            code={code}
+            onCodeChange={handleCodeChange}
+            inputProps={register(name)}
+            onNumberReplace={(digits) => setValue(name, digits, { shouldDirty: true, shouldValidate: true })}
+            invalid={Boolean(error)}
+            required={required}
+            locked={locked}
+            describedBy={errorId}
+            controlClassName={flagClass(flag)}
+          />
+        </div>
+        {action}
+      </div>
       {hint && !error && <p className="mt-1 text-[11px] leading-4 text-slate-500">{hint}</p>}
       {error && <p id={errorId} className="mt-1 text-[11px] font-medium text-red-600">{error.message}</p>}
       <FlagNote name={name} />

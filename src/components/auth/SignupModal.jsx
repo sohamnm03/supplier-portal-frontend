@@ -207,13 +207,17 @@ export default function SignupModal({ open, onClose, onSignedUp, initialEmail = 
                     inputProps={{ value: phone, onChange: (event) => setPhone(event.target.value), name: 'signupPhone' }}
                     onNumberReplace={setPhone}
                     invalid={Boolean(phone) && !phoneValid}
+                    locked={phoneVerification.verified}
                     required
                   />
                 </div>
                 {phoneVerification.verified ? (
-                  <span className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-bold text-emerald-700">
-                    <BadgeCheck size={14} /> Verified
-                  </span>
+                  <>
+                    <span className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-bold text-emerald-700">
+                      <BadgeCheck size={14} /> Verified
+                    </span>
+                    <button type="button" onClick={phoneVerification.reset} className="shrink-0 px-1 text-[11px] font-medium text-slate-400 underline underline-offset-2 hover:text-brand-700">Change</button>
+                  </>
                 ) : (
                   <button
                     type="button"
