@@ -1,0 +1,69 @@
+name: Deploy frontend
+
+# Every push to main builds the app and publishes it to the static website of the vendorselfservice storage account.
+# Azure sign-in is passwordless (OIDC): the ids below are identifiers, not secrets.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-frontend
+  cancel-in-progress: false
+
+env:
+  AZURE_CLIENT_ID: 19d7ec60-0d20-48cf-9b14-c0f69bc7d37a
+  AZURE_TENANT_ID: 20f14c78-01b4-476e-92c2-416b34c32de8
+  AZURE_SUBSCRIPTION_ID: 4e42ddef-bc2e-4f27-99d9-3f2a6daff370
+  STORAGE_ACCOUNT: vendorselfservice
+  SITE_URL: https://vendorselfservice.z29.web.core.windows.net
+  # Baked into the bundle at build time.
+  VITE_API_BASE_URL: https://fs-quad-vendor-selfservice-portal-a7d0bvb5b6faerf8.centralindia-01.azurewebsites.net
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Upload to $web
+        run: |
+          test -f dist/index.html
+          az storage blob upload-batch --account-name "$STORAGE_ACCOUNT" --auth-mode login \
+            --destination '$web' --source dist --overwrite
+          # index.html names the hashed bundles, so browsers must always re-fetch it.
+          az storage blob upload --account-name "$STORAGE_ACCOUNT" --auth-mode login \
+            --container-name '$web' --name index.html --file dist/index.html --overwrite \
+            --content-type 'text/html; charset=utf-8' --content-cache-control 'no-cache'
+
+      # Remove files from earlier builds that this build no longer has (old hashed bundles).
+      - name: Remove stale files
+        run: |
+          (cd dist && find . -type f | sed 's|^\./||' | sort) > local.txt
+          az storage blob list --account-name "$STORAGE_ACCOUNT" --auth-mode login \
+            --container-name '$web' --query '[].name' -o tsv | sort > remote.txt
+          comm -13 local.txt remote.txt | while IFS= read -r blob; do
+            echo "Deleting $blob"
+            az storage blob delete --account-name "$STORAGE_ACCOUNT" --auth-mode login \
+              --container-name '$web' --name "$blob" -o none
+          done
+
+      - name: Smoke test
+        run: |
+          curl -fsS "$SITE_URL/" | grep -q '<div id="root"'
+          echo "Site is serving the app"
